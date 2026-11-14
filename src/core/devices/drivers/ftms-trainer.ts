@@ -16,25 +16,33 @@ import {
   parseFtmsResponse,
   parseFtmsStatus,
   parseIndoorBikeData,
+  parseSpinDownTargets,
   parseSupportedPowerRange,
   parseSupportedResistanceRange,
   type FtmsCommand,
   type FtmsFeatures,
+  type SpinDownStatus,
 } from '../../ble/codecs'
 import { toHex, type GattSession } from '../../ble/transport'
 import { CHAR, SERVICE } from '../../ble/uuids'
-import type { DriverContext, TrainerDriver } from '../driver'
+import type { DriverContext, SpinDownCapable, SpinDownStart, TrainerDriver } from '../driver'
 import type { CommandResult, Range, TrainerCaps, TrainerCommand } from '../types'
 
 const CP_TIMEOUT_MS = 3000
 
+/** A control point answer: the result code and any response parameters. */
+interface Answer {
+  result: number
+  params: Uint8Array
+}
+
 interface PendingOp {
   op: number
-  resolve: (result: number) => void
+  resolve: (answer: Answer) => void
   timer: ReturnType<typeof setTimeout>
 }
 
-export class FtmsTrainerDriver implements TrainerDriver {
+export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
   readonly kind = 'ftms' as const
   readonly role = 'trainer' as const
   caps: TrainerCaps
@@ -49,6 +57,7 @@ export class FtmsTrainerDriver implements TrainerDriver {
   private resistanceEncoding: 'uint8' | 'sint16' = 'sint16'
   private readonly assembler = new IndoorBikeDataAssembler()
   private readonly controlLostListeners = new Set<() => void>()
+  private readonly spinDownListeners = new Set<(status: SpinDownStatus) => void>()
   private attached = false
 
   constructor(private features: FtmsFeatures | null = null) {
@@ -142,6 +151,39 @@ export class FtmsTrainerDriver implements TrainerDriver {
     }
   }
 
+  /**
+   * Spin Down Control (Start), after taking control like any command. On
+   * success the trainer answers with the speed window to reach; what follows
+   * arrives as Spin Down Status (onSpinDownStatus).
+   */
+  async startSpinDown(): Promise<SpinDownStart> {
+    if (!this.session || !this.attached) return { result: 'disconnected', targets: null }
+    if (!this.caps.spinDown) return { result: 'unsupported', targets: null }
+    const cmd: FtmsCommand = { op: 'spinDown', start: true }
+    try {
+      if (!this.hasControl) {
+        const c = await this.ensureControl()
+        if (c !== FtmsResult.Success) return { result: mapResult(c), targets: null }
+      }
+      let answer = await this.procedure(cmd)
+      if (answer.result === FtmsResult.ControlNotPermitted) {
+        this.hasControl = false
+        const c = await this.ensureControl()
+        if (c !== FtmsResult.Success) return { result: mapResult(c), targets: null }
+        answer = await this.procedure(cmd)
+      }
+      const result = mapResult(answer.result)
+      return { result, targets: result === 'ok' ? parseSpinDownTargets(answer.params) : null }
+    } catch {
+      return { result: this.session ? 'timeout' : 'disconnected', targets: null }
+    }
+  }
+
+  onSpinDownStatus(listener: (status: SpinDownStatus) => void): () => void {
+    this.spinDownListeners.add(listener)
+    return () => this.spinDownListeners.delete(listener)
+  }
+
   // ---- internals ------------------------------------------------------------
 
   private toFtms(cmd: TrainerCommand): FtmsCommand | null {
@@ -191,24 +233,29 @@ export class FtmsTrainerDriver implements TrainerDriver {
   }
 
   /** Writes one control-point procedure and resolves with its result code. */
-  private write(cmd: FtmsCommand): Promise<number> {
-    const run = async (): Promise<number> => {
+  private async write(cmd: FtmsCommand): Promise<number> {
+    return (await this.procedure(cmd)).result
+  }
+
+  /** Writes one control-point procedure and resolves with the trainer's whole answer. */
+  private procedure(cmd: FtmsCommand): Promise<Answer> {
+    const run = async (): Promise<Answer> => {
       const session = this.session
       if (!session) throw new Error('disconnected')
       const bytes = encodeFtmsCommand(cmd)
       const op = bytes[0]!
-      const response = new Promise<number>((resolve) => {
+      const response = new Promise<Answer>((resolve) => {
         const timer = setTimeout(() => {
           if (this.pending?.op === op) this.pending = null
-          resolve(-1)
+          resolve({ result: -1, params: new Uint8Array() })
         }, CP_TIMEOUT_MS)
         this.pending = { op, resolve, timer }
       })
       this.ctx?.capture({ dir: 'tx', service: SERVICE.fitnessMachine, characteristic: CHAR.fitnessMachineControlPoint, hex: toHex(bytes) })
       await session.write(SERVICE.fitnessMachine, CHAR.fitnessMachineControlPoint, bytes, { withResponse: true })
-      const result = await response
-      if (result === -1) throw new Error(`FTMS op 0x${op.toString(16)} timed out`)
-      return result
+      const answer = await response
+      if (answer.result === -1) throw new Error(`FTMS op 0x${op.toString(16)} timed out`)
+      return answer
     }
     const p = this.cpChain.then(run, run)
     this.cpChain = p.catch(() => undefined)
@@ -222,7 +269,7 @@ export class FtmsTrainerDriver implements TrainerDriver {
     const p = this.pending
     this.pending = null
     clearTimeout(p.timer)
-    p.resolve(res.result)
+    p.resolve({ result: res.result, params: res.params })
   }
 
   private onStatus(dv: DataView): void {
@@ -238,6 +285,8 @@ export class FtmsTrainerDriver implements TrainerDriver {
     } else if (status.kind === 'reset') {
       this.hasControl = false
       this.started = false
+    } else if (status.kind === 'spinDown') {
+      for (const l of this.spinDownListeners) l(status.status)
     }
   }
 
@@ -265,7 +314,7 @@ export class FtmsTrainerDriver implements TrainerDriver {
   private failPending(result: number): void {
     if (!this.pending) return
     clearTimeout(this.pending.timer)
-    this.pending.resolve(result)
+    this.pending.resolve({ result, params: new Uint8Array() })
     this.pending = null
   }
 }

@@ -2,9 +2,10 @@
 // React (StrictMode double-mounts and HMR must never create a second engine
 // or double Bluetooth subscriptions).
 import type { BleTransport } from '@core/ble/transport'
+import { SpinDown } from '@core/control/spin-down'
 import { TrainerController } from '@core/control/trainer-controller'
 import { defaultDriverFactory } from '@core/devices/drivers'
-import type { TrainerDriver } from '@core/devices/driver'
+import { canSpinDown, type TrainerDriver } from '@core/devices/driver'
 import { DeviceManager } from '@core/devices/manager'
 import type { DeviceRole } from '@core/devices/types'
 import { LiveEngine } from '@core/ride/live-engine'
@@ -37,6 +38,8 @@ export interface Runtime {
   /** The live coach: lines on screen and spoken during rides. */
   coach: CoachRuntime
   sim: SimWorld | null
+  /** A spin-down calibration for the connected trainer, or null when it has none. Start it with no ride on. */
+  spinDown(): SpinDown | null
   connect(role: DeviceRole): Promise<void>
   disconnect(role: DeviceRole): void
   forget(role: DeviceRole): Promise<void>
@@ -74,9 +77,14 @@ export function initRuntime(info: AppInfo): Runtime {
   const controller = new TrainerController()
 
   let trainerOffControlLost: (() => void) | null = null
+  let trainerOffSpinDown: (() => void) | null = null
+  /** The calibration in progress, told when the trainer drops off. */
+  let spinDown: SpinDown | null = null
   const bindTrainer = () => {
     trainerOffControlLost?.()
     trainerOffControlLost = null
+    trainerOffSpinDown?.()
+    trainerOffSpinDown = null
     const driver: TrainerDriver | null = devices.trainer()
     if (!driver) {
       controller.bind(null)
@@ -86,6 +94,11 @@ export function initRuntime(info: AppInfo): Runtime {
     trainerOffControlLost = driver.onControlLost(() =>
       pushNotice('trainer', 'Another app (Zwift, the Wahoo app or a head unit) took control of your trainer. Close it to continue.'),
     )
+    // a trainer can ask for a spin down itself (after a firmware update, or once it has warmed up)
+    if (canSpinDown(driver))
+      trainerOffSpinDown = driver.onSpinDownStatus((s) => {
+        if (s === 'requested' && spinDown?.state.phase !== 'speedUp') pushNotice('trainer', 'Your trainer asks for a spin-down calibration. Open Devices and choose Calibrate.')
+      })
   }
 
   devices.subscribe((list) => devicesStore.setState({ devices: list }))
@@ -93,6 +106,7 @@ export function initRuntime(info: AppInfo): Runtime {
     if (e.role === 'trainer' && (e.type === 'connected' || e.type === 'reconnected' || e.type === 'disconnected')) bindTrainer()
     if (e.type === 'warning') pushNotice(e.role, e.message)
     if (e.type === 'disconnected') pushNotice(e.role, 'Connection lost. Reconnecting…')
+    if (e.type === 'disconnected' && e.role === 'trainer') spinDown?.lost()
     if (e.type === 'reconnected') pushNotice(e.role, 'Reconnected.')
   })
 
@@ -158,6 +172,25 @@ export function initRuntime(info: AppInfo): Runtime {
     rides,
     coach,
     sim,
+    spinDown: () => {
+      const driver = devices.trainer()
+      if (!canSpinDown(driver)) return null
+      spinDown?.cancel()
+      const sd = new SpinDown(driver, clock)
+      // The trainer drops its load for the spin-down, so whatever the
+      // controller last sent no longer holds: once it ends, rebind, and the
+      // next ride's first command goes out whatever it is.
+      let ran = false
+      sd.subscribe((s) => {
+        if (s.phase === 'starting') ran = true
+        else if (ran && (s.phase === 'done' || s.phase === 'failed' || s.phase === 'idle')) {
+          ran = false
+          if (spinDown === sd) bindTrainer()
+        }
+      })
+      spinDown = sd
+      return sd
+    },
     connect,
     disconnect: (role) => devices.disconnect(role),
     forget: async (role) => {

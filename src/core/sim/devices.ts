@@ -67,6 +67,12 @@ export class SimFtmsTrainer extends VirtualPeripheral {
   windMps = 0
   /** While true, another "app" owns control and Request Control is refused. */
   lockedByOtherApp = false
+  /** Advertise and run spin down (a trainer without it answers "not supported"). */
+  spinDownSupported = true
+  /** The speed window a spin down asks for, km/h. */
+  readonly spinDownWindow = { lowKmh: 30, highKmh: 35 }
+  /** Where a spin down is: speeding up to the window, or coasting down through it. */
+  private spinDown: { phase: 'speedUp' } | { phase: 'coast'; since: number } | null = null
   /** Decoded command log for tests: RequestControl → Start → SetTargetPower... */
   readonly commandLog: { t: number; op: string; detail?: unknown }[] = []
 
@@ -105,6 +111,7 @@ export class SimFtmsTrainer extends VirtualPeripheral {
         resistanceLevel: Math.round(this.resistanceLevel),
       }),
     )
+    this.followSpinDown(b)
     this.notify(
       SERVICE.cyclingPower,
       CHAR.cyclingPowerMeasurement,
@@ -112,11 +119,38 @@ export class SimFtmsTrainer extends VirtualPeripheral {
     )
   }
 
+  /**
+   * A spin down the way trainers run one: "stop pedalling" once the flywheel
+   * passes the top of the window, then "success" once it has coasted below
+   * the bottom. Pedalling during the coast (after a moment to react) is an
+   * error.
+   */
+  private followSpinDown(b: SimBody): void {
+    const sd = this.spinDown
+    if (!sd) return
+    const kmh = b.speedMps * 3.6
+    const status = (s: 'stopPedaling' | 'success' | 'error') => this.notify(SERVICE.fitnessMachine, CHAR.fitnessMachineStatus, encodeFtmsStatus({ kind: 'spinDown', status: s }))
+    if (sd.phase === 'speedUp') {
+      if (kmh < this.spinDownWindow.highKmh) return
+      this.spinDown = { phase: 'coast', since: this.now() }
+      status('stopPedaling')
+      return
+    }
+    if (b.powerW > 20 && this.now() - sd.since > 3000) {
+      this.spinDown = null
+      status('error')
+    } else if (kmh < this.spinDownWindow.lowKmh) {
+      this.spinDown = null
+      status('success')
+    }
+  }
+
   protected override onConnectionChange(connected: boolean): void {
     if (!connected) {
       // FTMS: control is lost on disconnect; the trainer keeps its last load.
       this.hasControl = false
       this.started = false
+      this.spinDown = null
     }
   }
 
@@ -126,7 +160,7 @@ export class SimFtmsTrainer extends VirtualPeripheral {
         // machine: cadence(1) | totalDistance(2) | resistanceLevel(7) | power(14)
         const machine = (1 << 1) | (1 << 2) | (1 << 7) | (1 << 14)
         // target: resistance(2) | power(3) | simulation(13) | wheelCircumference(14) | spinDown(15)
-        const target = (1 << 2) | (1 << 3) | (1 << 13) | (1 << 14) | (1 << 15)
+        const target = (1 << 2) | (1 << 3) | (1 << 13) | (1 << 14) | (this.spinDownSupported ? 1 << 15 : 0)
         const out = new DataView(new ArrayBuffer(8))
         out.setUint32(0, machine, true)
         out.setUint32(4, target, true)
@@ -161,9 +195,9 @@ export class SimFtmsTrainer extends VirtualPeripheral {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     const cmd = decodeFtmsCommand(view)
     const op = bytes[0] ?? 0
-    const reply = (result: number) =>
+    const reply = (result: number, params: number[] = []) =>
       // Indications arrive after the write completes, like a real device.
-      queueMicrotask(() => this.notify(SERVICE.fitnessMachine, CHAR.fitnessMachineControlPoint, encodeFtmsResponse(op, result)))
+      queueMicrotask(() => this.notify(SERVICE.fitnessMachine, CHAR.fitnessMachineControlPoint, encodeFtmsResponse(op, result, params)))
 
     if (!cmd) {
       this.commandLog.push({ t: this.now(), op: `unknown-0x${op.toString(16)}` })
@@ -208,8 +242,19 @@ export class SimFtmsTrainer extends VirtualPeripheral {
         this.windMps = cmd.windMps
         return reply(FtmsResult.Success)
       case 'wheelCircumference':
-      case 'spinDown':
         return reply(FtmsResult.Success)
+      case 'spinDown': {
+        if (!this.spinDownSupported) return reply(FtmsResult.NotSupported)
+        if (!cmd.start) {
+          this.spinDown = null
+          return reply(FtmsResult.Success)
+        }
+        // the trainer lets go of any load while the flywheel is measured
+        this.mode = 'none'
+        this.spinDown = { phase: 'speedUp' }
+        const u16 = (kmh: number) => [Math.round(kmh * 100) & 0xff, Math.round(kmh * 100) >> 8]
+        return reply(FtmsResult.Success, [...u16(this.spinDownWindow.lowKmh), ...u16(this.spinDownWindow.highKmh)])
+      }
       default:
         return reply(FtmsResult.NotSupported)
     }
