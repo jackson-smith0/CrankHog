@@ -1,16 +1,21 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { AlertTriangle, Bike, Copy, Download, FolderInput, PencilLine, Star, Trash2 } from 'lucide-react'
+import { AlertTriangle, Bike, CalendarPlus, Copy, Download, FolderInput, PencilLine, Star, Trash2 } from 'lucide-react'
 import { WorkoutChart } from '../../charts/WorkoutChart'
+import { dateKey, dateKeyToMs, isDateKey } from '@core/workout/schedule'
+import { scheduleWorkout } from '../../plan/schedule-repo'
 import { useDevices } from '../../stores/devices'
 import { useRide } from '../../stores/ride'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
+import { Input } from '../../ui/form'
 import { formatDuration } from '../../ui/format'
 import { POWER_ZONE_LABELS, zoneVar } from '../../ui/zones'
 import { copyOf, deleteWorkout, moveToFolder, EXPORT_FORMATS, exportToZwift, exportWorkout, saveWorkout, setFavorite, tagLabel, type ExportFormat, type LibraryEntry } from '../../workouts/library'
 import { profileBlocks } from '../../workouts/profile'
 import { startWorkout } from './start'
+
+const SCHEDULE_DAY = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 
 export function WorkoutDetailDialog({
   entry,
@@ -31,6 +36,7 @@ export function WorkoutDetailDialog({
   const [format, setFormat] = useState<ExportFormat>('zwo')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [scheduleDate, setScheduleDate] = useState(() => dateKey(Date.now()))
   const totalZone = stats.zoneSeconds.reduce((a, b) => a + b, 0) || 1
 
   const run = async (fn: () => Promise<void>) => {
@@ -183,6 +189,24 @@ export function WorkoutDetailDialog({
               </Button>
             )}
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="eyebrow text-ink-faint">Schedule</span>
+          <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} aria-label="Day to ride it" className="h-9 w-44" data-testid="schedule-date" />
+          <Button
+            size="sm"
+            disabled={busy || !isDateKey(scheduleDate)}
+            onClick={() =>
+              void run(async () => {
+                await scheduleWorkout(scheduleDate, { id: w.id, name: w.name })
+                onNotice({ tone: 'good', text: `Planned ${w.name} for ${SCHEDULE_DAY.format(dateKeyToMs(scheduleDate))}. It's on the calendar in Training plan.` })
+                onClose()
+              })
+            }
+            data-testid="schedule-workout"
+          >
+            <CalendarPlus className="size-4" /> Add to calendar
+          </Button>
         </div>
         {confirmDelete && (
           <div className="flex items-center justify-between rounded-xl border border-bad/40 bg-bad/10 px-4 py-2 text-sm">

@@ -195,6 +195,24 @@ export const invoke = {
   'intervals.status': { req: Empty, res: z.object({ configured: z.boolean(), athleteId: z.string().optional() }) },
   'intervals.configure': { req: z.object({ apiKey: z.string().min(8).max(200), athleteId: z.string().max(40).default('0') }), res: Ok },
   'intervals.clear': { req: Empty, res: Ok },
+  /** Planned rides on the athlete's intervals.icu calendar, local dates both included (at most 92 days). */
+  'intervals.planned': {
+    req: z.object({ oldest: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), newest: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+    res: z.object({
+      events: z
+        .array(
+          z.object({
+            id: z.string().max(40),
+            start_date_local: z.string().max(40),
+            name: z.string().max(300),
+            type: z.string().max(40).nullable(),
+            description: z.string().max(20_000).nullable(),
+            zwo: z.string().max(200_000).nullable(),
+          }),
+        )
+        .max(400),
+    }),
+  },
   'uploads.enqueue': {
     req: z.object({
       rideId: RideId,

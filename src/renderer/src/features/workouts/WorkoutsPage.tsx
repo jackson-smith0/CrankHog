@@ -11,6 +11,7 @@ import { cn } from '../../ui/cn'
 import { formatDurationShort } from '../../ui/format'
 import { IMPORT_EXTENSIONS, loadLibrary, moveToFolder, movePlanItem, parseWorkoutFile, saveWorkout, tagLabel, type LibraryEntry } from '../../workouts/library'
 import { profileBlocks } from '../../workouts/profile'
+import { RideCalendar } from '../history/RideCalendar'
 import { WorkoutDetailDialog } from './WorkoutDetailDialog'
 
 type Filter = 'all' | 'favorites' | 'tests' | `tag:${string}`
@@ -218,6 +219,12 @@ export function WorkoutsPage() {
         </div>
       </div>
 
+      {tab === 'plan' && (
+        <section className="mb-6" aria-label="Training calendar">
+          <RideCalendar planning />
+          <p className="mt-2 text-xs text-ink-faint">Plan a workout on a day from its page (Add to calendar), or import your intervals.icu calendar. Drag a planned workout to move it. It counts as done when you ride it on its day.</p>
+        </section>
+      )}
       {library && visible.length === 0 && (
         <div className="mx-auto max-w-md py-16 text-center text-ink-faint">{counts[tab] === 0 ? TABS.find((t) => t.id === tab)!.empty : 'No workouts match. Try another filter.'}</div>
       )}

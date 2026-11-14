@@ -5,6 +5,7 @@ import type { RideStreams } from '@core/ride/streams'
 import type { RideSummary } from '@core/ride/types'
 import type { Workout } from '@core/workout/model'
 import type { Journey } from '@core/journeys/progress'
+import type { ScheduledWorkout } from '@core/workout/schedule'
 import type { StoredRoute, StoredRouteRide } from '../routes/route-codec'
 
 export interface StoredWorkout {
@@ -63,6 +64,7 @@ export class CrankHogDb extends Dexie {
   routes!: EntityTable<StoredRoute, 'id'>
   routeRides!: EntityTable<StoredRouteRide, 'rideId'>
   journeys!: EntityTable<Journey, 'id'>
+  schedule!: EntityTable<ScheduledWorkout, 'id'>
 
   // The database name keeps the old brand for the same reason the app://
   // origin does (app-protocol.ts): renaming it would orphan every ride ever
@@ -86,6 +88,10 @@ export class CrankHogDb extends Dexie {
     // v3: journeys in progress (grand journeys and imported routes; drops are one-offs)
     this.version(3).stores({
       journeys: 'id, courseId, updatedAt',
+    })
+    // v4: workouts scheduled on calendar days (src/core/workout/schedule.ts)
+    this.version(4).stores({
+      schedule: 'id, date, source',
     })
   }
 }

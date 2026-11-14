@@ -14,6 +14,8 @@ import { useCoachPack } from '../../coach/custom'
 import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { HOG_LANE, HOG_LAP_S, HOG_SCALE, weekRiders } from './track'
+import type { ScheduledWorkout } from '@core/workout/schedule'
+import { PlannedWorkoutDialog } from '../plan/PlannedWorkoutDialog'
 import { Velodrome } from './Velodrome'
 
 /**
@@ -27,13 +29,17 @@ export function HomeHero({
   now,
   suggested,
   reason,
+  today = null,
 }: {
   rides: readonly RideSummary[]
   tsb: number | null
   now: number
   suggested: Workout | null
   reason: string | null
+  /** A workout planned for today and not ridden yet: it takes the suggestion's place. */
+  today?: ScheduledWorkout | null
 }) {
+  const [planOpen, setPlanOpen] = useState(false)
   const coach = useSettings((s) => s.coach)
   const persona = useCoachPack(coach.personaId)
   const riders = useMemo(() => weekRiders(rides, now), [rides, now])
@@ -67,7 +73,12 @@ export function HomeHero({
               <Play className="size-4 fill-current" /> Start riding
             </Link>
           </Button>
-          {suggested && (
+          {today && (
+            <Button variant="secondary" size="lg" onClick={() => setPlanOpen(true)} data-testid="hero-today">
+              <span className="eyebrow text-ink-faint">Today</span> {today.name} <ArrowRight className="size-4" />
+            </Button>
+          )}
+          {!today && suggested && (
             <Button asChild variant="secondary" size="lg">
               <Link to="/workouts" search={{ open: suggested.id }} title={reason ?? undefined} data-testid="hero-suggested">
                 <span className="eyebrow text-ink-faint">Suggested</span> {suggested.name} <ArrowRight className="size-4" />
@@ -75,7 +86,8 @@ export function HomeHero({
             </Button>
           )}
         </div>
-        {suggested && reason && <p className="mt-2 max-w-md text-xs text-ink-faint">{reason}</p>}
+        {today ? <p className="mt-2 max-w-md text-xs text-ink-faint">On your plan for today.</p> : suggested && reason && <p className="mt-2 max-w-md text-xs text-ink-faint">{reason}</p>}
+        {today && planOpen && <PlannedWorkoutDialog entry={today} status="today" onClose={() => setPlanOpen(false)} />}
       </div>
       <div className="mx-auto flex w-full max-w-xl flex-col items-center">
         {/* the coach, in the infield, shouting at you to get on the bike: the bubble sits above the track, so nothing on the boards is hidden */}

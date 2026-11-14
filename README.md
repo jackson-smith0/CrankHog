@@ -116,6 +116,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 
 **Building workouts**
 - **Three shelves.** CrankHog's own workouts, your Custom workouts, and your Training plan: a numbered list you put in order. Anything you build lands in Custom unless you file it in the plan.
+- **A training calendar.** Put any workout on a day with **Add to calendar**, or bring in what's planned on your intervals.icu calendar. Drag a planned workout to another day to move it. It counts as done when you ride it on its day, missed days show as missed, and Home shows today's workout.
 - **A builder like zwofactory.com**, with blocks you can grab:
   - drag a block's edge to change its duration, or its top to change its power;
   - drag a block to reorder it;
