@@ -21,6 +21,8 @@ import { bridge } from '../platform/bridge'
 import { devicesStore, pushCapture, pushNotice } from '../stores/devices'
 import { liveStore } from '../stores/live'
 import { patchSettings, settingsStore } from '../stores/settings'
+import { playBeep, primeBeeps } from '../audio/beeps'
+import { BeepRuntime } from './beeps'
 import { RideRunner } from './ride-runner'
 
 export type AppInfo = InvokeRes<'app.info'>
@@ -113,6 +115,9 @@ export function initRuntime(info: AppInfo): Runtime {
   // The coach follows every ride. Automated test runs never make the Mac talk.
   const coach = createCoachRuntime({ rides, engine, clock, hub, controller }, { speak: !info.isTest })
   coach.start()
+  // Countdown beeps follow every ride too, whatever the coach is doing. Test runs stay silent.
+  new BeepRuntime({ rides, engine, settings: () => settingsStore.getState(), play: info.isTest ? () => undefined : playBeep }).start()
+  primeBeeps()
   engine.start()
   void rides.loadRecoveries()
 

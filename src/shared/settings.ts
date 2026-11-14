@@ -51,6 +51,12 @@ export const FuelingPrefsSchema = z.object({
   drinkEveryMin: z.number().min(5).max(60).default(15),
 })
 
+/** Interval countdown beeps (src/core/ride/countdown.ts): ticks before a step ends, a go as the next starts. Not muted with the coach. */
+export const BeepPrefsSchema = z.object({
+  enabled: z.boolean().default(true),
+  volume: z.number().min(0).max(1).default(0.6),
+})
+
 /** KICKR Headwind (or any smart fan driver): what drives its speed. */
 export const FanPrefsSchema = z.object({
   mode: z.enum(['off', 'fixed', 'hr', 'speed', 'power']).default('hr'),
@@ -115,6 +121,7 @@ export const AppSettingsSchema = z.object({
   trainer: TrainerPrefsSchema.default(TrainerPrefsSchema.parse({})),
   coach: CoachPrefsSchema.default(CoachPrefsSchema.parse({})),
   fueling: FuelingPrefsSchema.default(FuelingPrefsSchema.parse({})),
+  beeps: BeepPrefsSchema.default(BeepPrefsSchema.parse({})),
   hud: HudPrefsSchema.default(HudPrefsSchema.parse({})),
   fan: FanPrefsSchema.default(FanPrefsSchema.parse({})),
   journeys: JourneyPrefsSchema.default(JourneyPrefsSchema.parse({})),
@@ -125,6 +132,7 @@ export type AppSettings = z.infer<typeof AppSettingsSchema>
 export type TrainerPrefs = z.infer<typeof TrainerPrefsSchema>
 export type CoachPrefs = z.infer<typeof CoachPrefsSchema>
 export type FuelingPrefs = z.infer<typeof FuelingPrefsSchema>
+export type BeepPrefs = z.infer<typeof BeepPrefsSchema>
 export type HudPrefs = z.infer<typeof HudPrefsSchema>
 export type FanPrefs = z.infer<typeof FanPrefsSchema>
 export type JourneyPrefs = z.infer<typeof JourneyPrefsSchema>
