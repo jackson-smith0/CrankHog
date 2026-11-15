@@ -24,6 +24,8 @@ export function CalendarPage() {
     try {
       const r = await importFitFiles(files, (done, total) => setBusy(`Importing ${done} of ${total}…`))
       setNotice({ tone: r.imported.length + r.activities.length > 0 ? 'good' : 'bad', text: `Imported ${describeImport(r)}${r.skipped.length ? `; skipped ${r.skipped.length} (${r.skipped[0]!.reason}${r.skipped.length > 1 ? '…' : ''})` : ''}.` })
+    } catch (e) {
+      setNotice({ tone: 'bad', text: `Couldn't import: ${e instanceof Error ? e.message : String(e)}` })
     } finally {
       setBusy(null)
     }

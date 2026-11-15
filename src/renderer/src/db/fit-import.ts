@@ -1,6 +1,6 @@
 // Imports FIT activities (Garmin, Wahoo, other apps, or CrankHog's own files)
 // into the local history, so fitness charts and bests include them.
-import { FitImportError, importFitActivity, importOtherActivity, type DecodedFit } from '@core/fit/import'
+import { FitImportError, importFitActivity, importOtherActivity, splitMultisport, type DecodedFit } from '@core/fit/import'
 import { activityName } from '@core/fit/sport'
 import { hrLoad, lthrFor } from '@core/metrics/hr-load'
 import { finalizeRide } from '@core/ride/finalize'
@@ -40,38 +40,14 @@ export async function importFitFiles(files: { name: string; bytes: Uint8Array }[
       } catch {
         throw new FitImportError('no-records', 'Not a readable FIT file.')
       }
-      let imp
-      try {
-        imp = importFitActivity(decoded)
-      } catch (e) {
-        if (!(e instanceof FitImportError) || e.code !== 'not-cycling') throw e
-        report.activities.push(await saveOtherActivity(f.name, decoded, otherStarts))
-        continue
+      // a triathlon's swim, bike and run come in on their own
+      for (const leg of splitMultisport(decoded)) {
+        try {
+          await importLeg(f.name, leg, { starts, otherStarts, report })
+        } catch (e) {
+          report.skipped.push({ name: f.name, reason: e instanceof Error ? e.message : String(e) })
+        }
       }
-      if (starts.some((s) => Math.abs(s - imp.startedAt) < SAME_RIDE_MS)) throw new FitImportError('no-records', 'Already in your history.')
-      const athlete = await athleteSnapshot(imp.startedAt)
-      const rideId = `fit-${imp.startedAt.toString(36)}`
-      const name = rideName(f.name, imp.indoor, imp.startedAt)
-      const fin = finalizeRide({
-        rideId,
-        name,
-        kind: 'free',
-        simulated: false,
-        startedAt: imp.startedAt,
-        athlete,
-        records: imp.records,
-        utcOffsetMin: -new Date(imp.startedAt).getTimezoneOffset(),
-        softwareVersion: 10,
-        now: Date.now(),
-        imported: { fileName: f.name, device: imp.device ?? undefined },
-        elevationGainM: imp.elevationGainM,
-      })
-      await db().transaction('rw', db().rides, db().rideStreams, async () => {
-        await db().rides.put(fin.summary)
-        await db().rideStreams.put(fin.streams)
-      })
-      starts.push(imp.startedAt)
-      report.imported.push({ name, rideId })
     } catch (e) {
       report.skipped.push({ name: f.name, reason: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -79,6 +55,43 @@ export async function importFitFiles(files: { name: string; bytes: Uint8Array }[
     }
   }
   return report
+}
+
+/** One activity: a ride into the history, anything else onto the calendar. Throws to skip it. */
+async function importLeg(fileName: string, decoded: DecodedFit, into: { starts: number[]; otherStarts: number[]; report: FitImportReport }): Promise<void> {
+  const { starts, report } = into
+  let imp
+  try {
+    imp = importFitActivity(decoded)
+  } catch (e) {
+    if (!(e instanceof FitImportError) || e.code !== 'not-cycling') throw e
+    report.activities.push(await saveOtherActivity(fileName, decoded, into.otherStarts))
+    return
+  }
+  if (starts.some((s) => Math.abs(s - imp.startedAt) < SAME_RIDE_MS)) throw new FitImportError('no-records', 'Already in your history.')
+  const athlete = await athleteSnapshot(imp.startedAt)
+  const rideId = `fit-${imp.startedAt.toString(36)}`
+  const name = rideName(fileName, imp.indoor, imp.startedAt)
+  const fin = finalizeRide({
+    rideId,
+    name,
+    kind: 'free',
+    simulated: false,
+    startedAt: imp.startedAt,
+    athlete,
+    records: imp.records,
+    utcOffsetMin: -new Date(imp.startedAt).getTimezoneOffset(),
+    softwareVersion: 10,
+    now: Date.now(),
+    imported: { fileName, device: imp.device ?? undefined },
+    elevationGainM: imp.elevationGainM,
+  })
+  await db().transaction('rw', db().rides, db().rideStreams, async () => {
+    await db().rides.put(fin.summary)
+    await db().rideStreams.put(fin.streams)
+  })
+  starts.push(imp.startedAt)
+  report.imported.push({ name, rideId })
 }
 
 /** A run, swim or strength session: a summary with its hrTSS, for the calendar. */

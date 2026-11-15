@@ -28,6 +28,14 @@ describe('calendarMonth', () => {
     expect(m).toMatchObject({ rides: 2, tss: 100, movingS: 7200 })
   })
 
+  it('shows a simulated ride on its day but leaves it out of the totals', () => {
+    const sim = { ...ride('sim', new Date(2026, 8, 3, 7).getTime(), 90), simulated: true } as RideSummary
+    const m = calendarMonth(2026, 8, { rides: [ride('a', new Date(2026, 8, 2, 7).getTime(), 60), sim] })
+    expect(m.weeks[0]!.days[3]!.rides.map((r) => r.id)).toEqual(['sim'])
+    expect(m).toMatchObject({ rides: 1, tss: 60, movingS: 3600 })
+    expect(m.weeks[0]).toMatchObject({ rides: 1, tss: 60 })
+  })
+
   it('bands the load and steps months over year ends', () => {
     expect([0, 20, 70, 150].map(loadBand)).toEqual([0, 1, 2, 3])
     expect(shiftMonth(2026, 0, -1)).toEqual([2025, 11])

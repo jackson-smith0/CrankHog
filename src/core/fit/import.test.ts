@@ -2,7 +2,7 @@ import FitParser from 'fit-file-parser'
 import { describe, expect, it } from 'vitest'
 import { finalizeRide } from '../ride/finalize'
 import type { RideRecord } from '../ride/recorder'
-import { FitImportError, importFitActivity, importOtherActivity, type DecodedFit, type DecodedRecord } from './import'
+import { FitImportError, importFitActivity, importOtherActivity, splitMultisport, type DecodedFit, type DecodedRecord } from './import'
 
 const T0 = Date.UTC(2026, 8, 20, 6, 30, 0)
 
@@ -155,5 +155,39 @@ describe('importOtherActivity', () => {
 
   it('refuses a file with nothing in it', () => {
     expect(() => importOtherActivity({ sessions: [{ sport: 'running' }] })).toThrow(FitImportError)
+  })
+})
+
+describe('splitMultisport', () => {
+  // a sprint triathlon: 20 min swim, 2 min transition, 40 min bike, 1 min transition, 20 min run
+  const legs: [string, number, number][] = [
+    ['swimming', 0, 1200],
+    ['transition', 1200, 120],
+    ['cycling', 1320, 2400],
+    ['transition', 3720, 60],
+    ['running', 3780, 1200],
+  ]
+  const tri: DecodedFit = {
+    sessions: legs.map(([sport, start]) => ({ sport, start_time: at(start) })),
+    records: Array.from({ length: 4980 }, (_, s) => ({ timestamp: at(s), heart_rate: 150 })),
+    laps: legs.map(([, start]) => ({ start_time: at(start) })),
+  }
+
+  it('makes one activity of each leg, with its own records and laps, leaving the transitions out', () => {
+    const parts = splitMultisport(tri)
+    expect(parts.map((p) => [p.sessions![0]!.sport, p.records!.length, p.laps!.length])).toEqual([
+      ['swimming', 1200, 1],
+      ['cycling', 2400, 1],
+      ['running', 1200, 1],
+    ])
+    expect(importFitActivity(parts[1]!).records).toHaveLength(2400)
+    expect(importOtherActivity(parts[2]!)).toMatchObject({ sport: 'running', movingS: 1200 })
+  })
+
+  it('leaves a file with one session, or sessions without start times, whole', () => {
+    const one: DecodedFit = { sessions: [{ sport: 'cycling' }], records: [] }
+    expect(splitMultisport(one)).toEqual([one])
+    const undated: DecodedFit = { sessions: [{ sport: 'swimming' }, { sport: 'running' }] }
+    expect(splitMultisport(undated)).toEqual([undated])
   })
 })

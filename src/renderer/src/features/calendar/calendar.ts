@@ -35,6 +35,7 @@ export interface CalendarWeek {
   days: CalendarDay[]
   startKey: DateKey
   endKey: DateKey
+  /** Totals of real rides: simulated ones show on their day but don't count. */
   rides: number
   movingS: number
   tss: number
@@ -119,7 +120,8 @@ export function calendarMonth(year: number, month: number, input: CalendarInput)
         marks: marksByDay.get(key) ?? [],
       })
     }
-    const inWeek = days.flatMap((d) => d.rides)
+    // totals count real riding only, as the volume beside them does
+    const inWeek = days.flatMap((d) => d.rides).filter((r) => !r.simulated)
     weeks.push({
       days,
       startKey: days[0]!.key,
@@ -128,7 +130,7 @@ export function calendarMonth(year: number, month: number, input: CalendarInput)
       movingS: inWeek.reduce((s, r) => s + r.movingS, 0),
       tss: inWeek.reduce((s, r) => s + (r.tss ?? 0), 0),
     })
-    const inMonth = days.filter((d) => d.inMonth).flatMap((d) => d.rides)
+    const inMonth = days.filter((d) => d.inMonth).flatMap((d) => d.rides).filter((r) => !r.simulated)
     total = { rides: total.rides + inMonth.length, movingS: total.movingS + inMonth.reduce((s, r) => s + r.movingS, 0), tss: total.tss + inMonth.reduce((s, r) => s + (r.tss ?? 0), 0) }
   }
   return { year, month, weeks, ...total, planned }

@@ -53,6 +53,28 @@ export interface DecodedFit {
   file_ids?: { manufacturer?: string; product?: number | string; product_name?: string; garmin_product?: string }[]
 }
 
+/**
+ * A multisport file (a triathlon: swim, bike and run, with transitions
+ * between) as one file per leg, each with its own session and the records
+ * and laps from its start to the next session's. Transitions are left out.
+ * A file with one session, or sessions without start times, comes back whole.
+ */
+export function splitMultisport(fit: DecodedFit): DecodedFit[] {
+  const sessions = fit.sessions ?? []
+  const starts = sessions.map((s) => toSeconds(s.start_time))
+  if (sessions.length < 2 || starts.some((t) => t === null)) return [fit]
+  const legs = sessions.map((session, i) => ({ session, start: starts[i]! })).sort((a, b) => a.start - b.start)
+  return legs.flatMap(({ session, start }, i) => {
+    if (session.sport === 'transition') return []
+    const end = legs[i + 1]?.start ?? Infinity
+    const inLeg = (w: When | undefined) => {
+      const t = toSeconds(w)
+      return t !== null && t >= start && t < end
+    }
+    return [{ ...fit, sessions: [session], records: (fit.records ?? []).filter((r) => inLeg(r.timestamp)), laps: (fit.laps ?? []).filter((l) => inLeg(l.start_time)) }]
+  })
+}
+
 export interface ImportedActivity {
   /** Epoch ms at the start of the first moving second. */
   startedAt: number

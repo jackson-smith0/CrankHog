@@ -13,6 +13,17 @@ const DECODED: Record<string, DecodedFit> = {
     records: Array.from({ length: 3600 }, (_, s) => ({ timestamp: at(s), heart_rate: 160, distance: s * 3 })),
   },
   'strength.fit': { sessions: [{ sport: 'training', sub_sport: 'strength_training' }], records: Array.from({ length: 1800 }, (_, s) => ({ timestamp: at(7200 + s) })) },
+  // a day later: a triathlon, 20 min swim, a transition, 40 min bike, a transition, 20 min run
+  'tri.fit': {
+    sessions: [
+      { sport: 'swimming', start_time: at(86_400) },
+      { sport: 'transition', start_time: at(87_600) },
+      { sport: 'cycling', sub_sport: 'road', start_time: at(87_720) },
+      { sport: 'transition', start_time: at(90_120) },
+      { sport: 'running', start_time: at(90_180) },
+    ],
+    records: Array.from({ length: 4980 }, (_, s) => ({ timestamp: at(86_400 + s), heart_rate: 150, ...(s >= 1320 && s < 3720 ? { power: 200, cadence: 85 } : {}) })),
+  },
 }
 vi.mock('fit-file-parser', () => ({
   default: class {
@@ -47,6 +58,19 @@ describe('importFitFiles: other sports', () => {
     expect(again.activities).toEqual([])
     expect(again.skipped[0]!.reason).toMatch(/Already/)
     expect(await db().activities.count()).toBe(1)
+  })
+})
+
+describe('importFitFiles: a multisport file', () => {
+  it('brings in a triathlon as a swim, a ride and a run, not one swim the length of the race', async () => {
+    const r = await importFitFiles([file('tri.fit')])
+    expect(r.imported).toHaveLength(1)
+    expect((await db().rides.toArray()).map((x) => x.movingS)).toEqual([2400])
+    expect((await db().activities.orderBy('startedAt').toArray()).map((a) => [a.sport, a.movingS])).toEqual([
+      ['swimming', 1200],
+      ['running', 1200],
+    ])
+    expect(r.skipped).toEqual([])
   })
 })
 
