@@ -38,7 +38,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 
 <p align="center"><img src="docs/screenshots/coach.png" alt="Coach settings: the personas, a sample line, spice from gentle to feral, and profanity from clean to unhinged" width="900"></p>
 
-**Workouts you can see before they hurt you,** on three shelves: CrankHog's own workouts, your Custom ones, and a Training plan you put in order.
+**Workouts you can see before they hurt you,** on three shelves: CrankHog's own workouts, your Custom ones, and your Training plans.
 
 <p align="center">
   <img src="docs/screenshots/workouts.png" alt="The Workouts page on its CrankHog workouts tab: every workout drawn as its power profile at your FTP, with Custom workouts and Training plan tabs beside it" width="440">
@@ -116,7 +116,13 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **Your units.** Metric or imperial, with speed (km/h or mph) and weight (kg or lb) set on their own. Tap the unit on the speed tile to flip it mid-ride.
 
 **Building workouts**
-- **Three shelves.** CrankHog's own workouts, your Custom workouts, and your Training plan: a numbered list you put in order. Anything you build lands in Custom unless you file it in the plan.
+- **Three shelves.** CrankHog's own workouts, your Custom workouts, and your Training plans. Anything you build lands in Custom unless you file it in a plan.
+- **Training plans.** **Add a training plan** asks what you're training for and when, then:
+  - **Import your workout files.** They go in in file-name order, and a file named `YYYY-MM-DD_name` goes on that day.
+  - **Build a plan for me.** A few questions (hours a week, the days you ride, your long-ride day, raise FTP, build endurance, or the event, whether all-round, climbing, time trial or criterium), then a week-by-week plan: base, build, specialty and a taper into your event, with a recovery week every fourth week and a ramp test to start. CrankHog builds it from its own workouts, or your AI plans the weeks and writes any workout the library is missing.
+  - **Start empty** and pick workouts from your library.
+
+  A plan is its workouts in order, the days you ride and a start date. Put it on the calendar, and every change re-lays it; workouts you've ridden stay where they were.
 - **A builder like zwofactory.com**, with blocks you can grab:
   - drag a block's edge to change its duration, or its top to change its power;
   - drag a block to reorder it;
@@ -150,7 +156,12 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **One rule.** No coach ever tells you to hurt yourself. Everything else is fair game, so pick the spice and the language with care. If your heart rate looks wrong, or you stop suddenly in a hard effort, every coach turns supportive.
 
 **Your history**
-- **A list or a calendar.** Every ride newest first, or a month at a time: each day's rides, days shaded by training load, and weekly hours and TSS.
+- **History.** Every ride newest first.
+- **The Calendar** (its own page in the sidebar). The whole month: today highlighted, past days greyed, done workouts green and missed ones red.
+  - **Moving and planning:** drag a planned workout to another day, plan any workout on a day with **Add to calendar**, or bring in what's planned on your intervals.icu calendar.
+  - **Events and days off:** click a day's number to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
+  - **Other sports:** runs, swims and strength sessions from your Garmin's FIT files show up too, with their hrTSS (a load from heart rate, on the same scale as ride TSS) and Garmin's Training Effect.
+  - **Beside each week:** planned against done time, load and sessions, with fitness, fatigue and form at the week's end, projected from your plan for the weeks ahead.
 - **Ride detail:** power, cadence, HR, speed and W′ balance charts, laps, time in zones, RPE and notes, and an AI debrief.
 - **Fitness:** the PMC (fitness, fatigue, form), weekly load, the power curve against your 90-day best, and FTP history.
 - **Fitness overview.** A plain-English read of those numbers: where your fitness is, the six-week trend, and whether your FTP needs a test. With AI on, your coach writes it, and **Ask the coach** takes it straight into the chat for questions.
