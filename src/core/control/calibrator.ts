@@ -13,9 +13,13 @@ export interface CalibratorDeps {
   clock: Clock
   /** True while a ride is recording: no calibration starts then. */
   riding(): boolean
-  /** Lets go of a target the trainer holds with no ride recording (a free ride left on), before a calibration. */
-  release(): void
-  /** A calibration that ran has ended. The trainer dropped its load for it, so what was last sent no longer holds. */
+  /**
+   * A calibration is starting: let go of any target held with no ride
+   * recording (a free ride left on), and keep the controller off the trainer,
+   * or its next command would land in the middle of the spin down.
+   */
+  hold(): void
+  /** That calibration has ended: the controller may drive the trainer again. The trainer dropped its load for it, so what was last sent no longer holds. */
   ended(): void
   /** The trainer asked for a spin down. Called once. */
   requested(): void
@@ -45,14 +49,17 @@ export class Calibrator {
     if (!driver) return 'disconnected'
     if (!canSpinDown(driver)) return 'unsupported'
     this.current?.cancel()
-    if (!this.deps.riding()) this.deps.release()
     const sd = new SpinDown(driver, this.deps.clock, { busy: () => this.deps.riding() })
     let ran = false
     sd.subscribe((s) => {
-      if (s.phase === 'starting') ran = true
-      else if (ran && !sd.running) {
+      // 'starting' is set before the spin down Start is queued, so the controller lets go first
+      if (s.phase === 'starting') {
+        if (!ran) this.deps.hold()
+        ran = true
+      } else if (ran && !sd.running) {
+        // every hold is ended, even for a calibration a newer one replaced
         ran = false
-        if (this.current === sd) this.deps.ended()
+        this.deps.ended()
       }
     })
     this.current = sd

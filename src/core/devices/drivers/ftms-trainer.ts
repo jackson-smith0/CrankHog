@@ -59,8 +59,14 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
   private readonly assembler = new IndoorBikeDataAssembler()
   private readonly controlLostListeners = new Set<() => void>()
   private readonly spinDownListeners = new Set<(update: SpinDownUpdate) => void>()
-  /** Bumped by stopSpinDown, so a Start still waiting for control is not sent after the Stop. */
+  /** A Stop has been queued since the last Start: the next target sends Start first. */
+  private stopped = false
+  /** The Stop under way, its Reset fallback included; a new spin down waits for it. */
+  private stopping: Promise<unknown> = Promise.resolve()
+  /** Bumped by a Stop, a reset and lost control, so a spin down Start still waiting to go out is dropped. */
   private spinDownRun = 0
+  /** Our own Reset (Stop's fallback) went out: the Reset status it brings ends nothing new. */
+  private ownReset = false
   private attached = false
 
   constructor(private features: FtmsFeatures | null = null) {
@@ -140,7 +146,7 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
       if (!this.hasControl) {
         const c = await this.ensureControl()
         if (c !== FtmsResult.Success) return mapResult(c)
-      } else await this.ensureStarted()
+      } else if (this.stopped) await this.startSession()
       let result = await this.write(ftms)
       if (result === FtmsResult.ControlNotPermitted) {
         this.hasControl = false
@@ -164,9 +170,12 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
     if (!this.caps.spinDown) return { result: 'unsupported', targets: null }
     const cmd: FtmsCommand = { op: 'spinDown', start: true }
     const run = this.spinDownRun
-    // stopped while waiting for control: the Stop is already queued, so Start must not follow it
+    // stopped, reset or taken over before it went out: a Start sent now would outlive that
     const stopped: SpinDownStart = { result: 'rejected', targets: null }
     try {
+      // an earlier Stop (and its Reset fallback) goes first
+      await this.stopping
+      if (run !== this.spinDownRun) return stopped
       if (!this.hasControl) {
         const c = await this.ensureControl()
         if (c !== FtmsResult.Success) return { result: mapResult(c), targets: null }
@@ -194,16 +203,24 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
    * hands back control; the next command takes it again. Queued behind
    * anything already sent, so it also ends a Start still waiting for its answer.
    */
-  async stopSpinDown(): Promise<CommandResult> {
-    if (!this.session || !this.attached) return 'disconnected'
+  stopSpinDown(): Promise<CommandResult> {
+    if (!this.session || !this.attached) return Promise.resolve('disconnected')
     this.spinDownRun++
-    // before the write, so a target queued behind it sends Start first
-    this.started = false
+    // set as the Stop is queued, so a target queued behind it sends Start first
+    this.stopped = true
+    const stop = this.endSession()
+    this.stopping = stop
+    return stop
+  }
+
+  private async endSession(): Promise<CommandResult> {
     try {
       const r = await this.write({ op: 'stop' })
       if (r !== FtmsResult.NotSupported) return mapResult(r)
+      this.ownReset = true
       const reset = await this.write({ op: 'reset' })
       if (reset === FtmsResult.Success) this.hasControl = false
+      else this.ownReset = false
       return mapResult(reset)
     } catch {
       return this.session ? 'timeout' : 'disconnected'
@@ -248,13 +265,14 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
     }
     this.hasControl = true
     this.controlLostReported = false
-    await this.ensureStarted()
+    if (!this.started || this.stopped) await this.startSession()
     return r
   }
 
-  /** Start, once per control, and again after a Stop. */
-  private async ensureStarted(): Promise<void> {
-    if (this.started) return
+  /** Start: tried once per control, and once after each Stop. */
+  private async startSession(): Promise<void> {
+    // cleared as Start is queued: a Stop queued after it sets it again
+    this.stopped = false
     const s = await this.write({ op: 'start' })
     // Some trainers answer "not supported" to Start; they're still controllable.
     if (s === FtmsResult.Success || s === FtmsResult.NotSupported) this.started = true
@@ -317,10 +335,16 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
     }
     if (status.kind === 'controlPermissionLost') {
       this.reportControlLost()
+      this.spinDownRun++
       this.spinDownUpdate('controlLost')
     } else if (status.kind === 'reset') {
       this.hasControl = false
       this.started = false
+      if (this.ownReset) {
+        this.ownReset = false
+        return
+      }
+      this.spinDownRun++
       this.spinDownUpdate('reset')
     } else if (status.kind === 'spinDown') {
       this.spinDownUpdate(status.status)

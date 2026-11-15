@@ -115,6 +115,87 @@ describe('spin down on a simulated KICKR over FTMS', () => {
     expect(rig.world.trainer.mode).toBe('erg')
   })
 
+  /** The trainer resets, so the driver must take control and send Start again before the next write. */
+  async function afterReset() {
+    rig.world.trainer.resetByTrainer()
+    await rig.advance(100)
+  }
+
+  /** Runs `fn` the moment the trainer receives `op`, before it answers. */
+  function onReceive(op: string, fn: () => void) {
+    const log = rig.world.trainer.commandLog
+    const push = log.push.bind(log)
+    log.push = (...entries) => {
+      const n = push(...entries)
+      if (entries.some((e) => e.op === op)) {
+        log.push = push
+        fn()
+      }
+      return n
+    }
+  }
+
+  it('a trainer that resets before the Start went out is never left spinning down', async () => {
+    rig = simRig()
+    await rig.connect('trainer')
+    const sd = new SpinDown(spinDownTrainer(rig.devices.trainer()), rig.clock)
+    const starting = sd.start()
+    rig.world.trainer.resetByTrainer()
+    await rig.until(starting)
+    await rig.advance(500)
+    expect(sd.state).toEqual({ phase: 'failed', reason: 'trainer-reset' })
+    expect(rig.world.trainer.commandLog.map((c) => c.op)).not.toContain('spinDown')
+    expect(rig.world.trainer.spinningDown).toBe(false)
+  })
+
+  it('cancelling while Start (0x07) is still unanswered: no spin down, and Start again before the next target', async () => {
+    rig = simRig()
+    await rig.connect('trainer')
+    await afterReset()
+    rig.world.trainer.commandLog.length = 0
+    const sd = new SpinDown(spinDownTrainer(rig.devices.trainer()), rig.clock)
+    onReceive('start', () => sd.cancel())
+    await rig.until(sd.start())
+    await erg()
+    const ops = rig.world.trainer.commandLog.map((c) => c.op)
+    expect(ops).not.toContain('spinDown')
+    expect(ops.slice(0, 5)).toEqual(['requestControl', 'start', 'stop', 'start', 'targetPower'])
+    expect(rig.world.trainer.mode).toBe('erg')
+  })
+
+  it('a trainer that refuses Start gets one, not one before every target', async () => {
+    rig = simRig()
+    rig.world.trainer.refusesStart = true
+    await rig.connect('trainer')
+    await erg()
+    rig.controller.setDesired({ mode: 'erg', watts: 210 })
+    await rig.advance(3000)
+    rig.controller.setDesired({ mode: 'erg', watts: 220 })
+    await rig.advance(3000)
+    const ops = rig.world.trainer.commandLog.map((c) => c.op)
+    expect(ops.filter((op) => op === 'start')).toHaveLength(1)
+    expect(ops.filter((op) => op === 'targetPower').length).toBeGreaterThanOrEqual(3)
+    expect(rig.world.trainer.targetW).toBe(220)
+  })
+
+  it('a trainer without Stop is reset instead, and a calibration started straight after still runs', async () => {
+    rig = simRig()
+    rig.world.trainer.stopSupported = false
+    await rig.connect('trainer')
+    const trainer = spinDownTrainer(rig.devices.trainer())
+    const first = new SpinDown(trainer, rig.clock)
+    await rig.until(first.start())
+    rig.world.trainer.commandLog.length = 0
+    first.cancel()
+    const second = new SpinDown(trainer, rig.clock)
+    await rig.until(second.start())
+    await rig.advance(500)
+    expect(rig.world.trainer.commandLog.map((c) => c.op)).toEqual(['stop', 'reset', 'requestControl', 'start', 'spinDown'])
+    // our own Reset's status ends nothing
+    expect(second.state.phase).toBe('speedUp')
+    expect(rig.world.trainer.spinningDown).toBe(true)
+  })
+
   it('a trainer without spin down says it is not supported', async () => {
     rig = simRig()
     rig.world.trainer.spinDownSupported = false
@@ -137,13 +218,22 @@ describe('the calibrator on a simulated KICKR', () => {
 
   async function setup(opts: { riding?: boolean } = {}) {
     rig = simRig()
-    const seen = { released: 0, ended: 0, requested: 0 }
+    const seen = { held: 0, ended: 0, requested: 0 }
+    // what the app does: let go of the trainer while calibrating, then drive it again
     const calibrator = new Calibrator({
       devices: rig.devices,
       clock: rig.clock,
       riding: () => opts.riding ?? false,
-      release: () => seen.released++,
-      ended: () => seen.ended++,
+      hold: () => {
+        seen.held++
+        rig.controller.setDesired({ mode: 'idle' })
+        rig.controller.bind(null)
+      },
+      ended: () => {
+        seen.ended++
+        const d = rig.devices.trainer()
+        rig.controller.bind(d ? { send: (c) => d.send(c), powerRange: d.caps.powerRange } : null)
+      },
       requested: () => seen.requested++,
     })
     await rig.connect('trainer')
@@ -195,19 +285,30 @@ describe('the calibrator on a simulated KICKR', () => {
     expect(sd.state).toEqual({ phase: 'failed', reason: 'busy' })
     expect(rig.world.trainer.commandLog.map((c) => c.op)).not.toContain('spinDown')
     // a ride's target is not let go of
-    expect(seen.released).toBe(0)
+    expect(seen.held).toBe(0)
   })
 
-  it('lets go of a target held with no ride recording before calibrating', async () => {
+  it('a free-ride target held with nothing recording is let go, and nothing is sent in the middle of the spin down', async () => {
     const { calibrator, seen } = await setup()
-    await running(calibrator)
-    expect(seen.released).toBe(1)
+    rig.controller.setDesired({ mode: 'resistance', pct: 20 })
+    await rig.advance(2000)
+    expect(rig.world.trainer.mode).toBe('resistance')
+    const sd = await running(calibrator)
+    await rig.advance(5000)
+    const ops = rig.world.trainer.commandLog.map((c) => c.op)
+    expect(ops.slice(ops.indexOf('spinDown'))).toEqual(['spinDown'])
+    expect(seen.held).toBe(1)
+    // the controller drives the trainer again once it ends, with nothing left to send
+    sd.cancel()
+    await rig.advance(3000)
+    expect(seen.ended).toBe(1)
+    expect(rig.world.trainer.commandLog.map((c) => c.op).slice(ops.length)).toEqual(['stop'])
   })
 
   it('says a trainer without spin down has none', async () => {
     rig = simRig()
     rig.world.trainer.spinDownSupported = false
-    const calibrator = new Calibrator({ devices: rig.devices, clock: rig.clock, riding: () => false, release: () => undefined, ended: () => undefined, requested: () => undefined })
+    const calibrator = new Calibrator({ devices: rig.devices, clock: rig.clock, riding: () => false, hold: () => undefined, ended: () => undefined, requested: () => undefined })
     await rig.connect('trainer')
     expect(calibrator.create()).toBe('unsupported')
   })

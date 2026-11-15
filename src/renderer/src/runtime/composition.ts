@@ -105,7 +105,10 @@ export function initRuntime(info: AppInfo): Runtime {
     devices,
     clock,
     riding: () => rides?.active ?? false,
-    release: () => controller.setDesired({ mode: 'idle' }),
+    hold: () => {
+      controller.setDesired({ mode: 'idle' })
+      controller.bind(null)
+    },
     // once it ends, rebind, and the next ride's first command goes out whatever it is
     ended: bindTrainer,
     // a trainer can ask for a spin down itself (after a firmware update, or once it has warmed up)

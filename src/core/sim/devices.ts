@@ -69,6 +69,10 @@ export class SimFtmsTrainer extends VirtualPeripheral {
   lockedByOtherApp = false
   /** Advertise and run spin down (a trainer without it answers "not supported"). */
   spinDownSupported = true
+  /** Answer Stop (a trainer without it answers "not supported"). */
+  stopSupported = true
+  /** Answer Start with "operation failed", like a trainer that wants no Start but takes targets anyway. */
+  refusesStart = false
   /** The speed window a spin down asks for, km/h. */
   readonly spinDownWindow = { lowKmh: 30, highKmh: 35 }
   /** Where a spin down is: speeding up to the window, or coasting down through it. */
@@ -247,9 +251,11 @@ export class SimFtmsTrainer extends VirtualPeripheral {
         queueMicrotask(() => this.notify(SERVICE.fitnessMachine, CHAR.fitnessMachineStatus, encodeFtmsStatus({ kind: 'reset' })))
         return
       case 'start':
+        if (this.refusesStart) return reply(FtmsResult.OperationFailed)
         this.started = true
         return reply(FtmsResult.Success)
       case 'stop':
+        if (!this.stopSupported) return reply(FtmsResult.NotSupported)
         // ends the session, and a spin down running in it
         this.started = false
         this.spinDown = null
