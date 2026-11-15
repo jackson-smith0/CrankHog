@@ -30,6 +30,7 @@ export function HomeHero({
   suggested,
   reason,
   today = null,
+  event = null,
 }: {
   rides: readonly RideSummary[]
   tsb: number | null
@@ -38,6 +39,8 @@ export function HomeHero({
   reason: string | null
   /** A workout planned for today and not ridden yet: it takes the suggestion's place. */
   today?: ScheduledWorkout | null
+  /** The next A event, for a countdown. */
+  event?: { name?: string; days: number } | null
 }) {
   const [planOpen, setPlanOpen] = useState(false)
   const coach = useSettings((s) => s.coach)
@@ -87,6 +90,12 @@ export function HomeHero({
           )}
         </div>
         {today ? <p className="mt-2 max-w-md text-xs text-ink-faint">On your plan for today.</p> : suggested && reason && <p className="mt-2 max-w-md text-xs text-ink-faint">{reason}</p>}
+        {event && (
+          <p className="mt-3 text-sm" data-testid="hero-event">
+            <span className="eyebrow text-ink-faint">Countdown</span>{' '}
+            <span className="font-semibold">{event.name ?? 'Your event'}</span> {event.days === 0 ? 'is today' : `in ${event.days} day${event.days === 1 ? '' : 's'}`}
+          </p>
+        )}
         {today && planOpen && <PlannedWorkoutDialog entry={today} status="today" onClose={() => setPlanOpen(false)} />}
       </div>
       <div className="mx-auto flex w-full max-w-xl flex-col items-center">

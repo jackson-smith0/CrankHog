@@ -3,7 +3,6 @@ import { useNavigate } from '@tanstack/react-router'
 import { DndContext, KeyboardSensor, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { Bike, ChevronLeft, ChevronRight, CircleCheck, FlaskConical, Gauge, Mountain } from 'lucide-react'
 import type { RideSummary } from '@core/ride/types'
-import type { DayMark } from '@core/workout/plan'
 import { dateKey, isDateKey } from '@core/workout/schedule'
 import { volumeBetween } from '@core/workout/volume'
 import type { OtherActivity } from '../../db/db'
@@ -15,7 +14,7 @@ import { useNow } from '../../ui/useNow'
 import { PlannedWorkoutDialog } from '../plan/PlannedWorkoutDialog'
 import { ActivityDialog } from './ActivityDialog'
 import { sportIcon } from './sport'
-import { calendarMonth, shiftMonth, type CalendarDay, type PlannedOnDay } from './calendar'
+import { calendarMonth, MARK_NAME, shiftMonth, type CalendarDay, type PlannedOnDay } from './calendar'
 import { useCalendarData } from './use-calendar-data'
 import { MonthVolume, WeekVolume } from './VolumePane'
 
@@ -30,7 +29,6 @@ const PLANNED_CHIP: Record<PlannedOnDay['status'], string> = {
   today: 'border-accent bg-accent/10 text-ink',
   missed: 'border-bad/60 bg-bad/10 text-bad',
 }
-const MARK_LABEL: Record<DayMark['kind'], string> = { event: 'Event', rest: 'Rest day', sick: 'Sick', travel: 'Travel' }
 
 /**
  * A month at a time: rides, other sports and planned workouts on each day,
@@ -169,7 +167,7 @@ function DayCell({
   const parts = [d.rides.length === 0 ? 'no rides' : `${d.rides.length} ride${d.rides.length === 1 ? '' : 's'}, ${Math.round(d.tss)} TSS`]
   if (d.activities.length > 0) parts.push(`${d.activities.length} other activit${d.activities.length === 1 ? 'y' : 'ies'}`)
   if (d.planned.length > 0) parts.push(`${d.planned.length} planned`)
-  for (const mk of d.marks) parts.push(mk.kind === 'event' ? `event: ${mk.name ?? ''}` : MARK_LABEL[mk.kind])
+  for (const mk of d.marks) parts.push(mk.kind === 'event' ? `event: ${mk.name ?? ''}` : MARK_NAME[mk.kind])
   return (
     <div
       ref={setNodeRef}
@@ -211,7 +209,7 @@ function DayCell({
               data-testid="calendar-mark"
               data-kind={mk.kind}
             >
-              {mk.kind === 'event' ? `${mk.priority ?? 'A'} · ${mk.name ?? 'Event'}` : MARK_LABEL[mk.kind]}
+              {mk.kind === 'event' ? `${mk.priority ?? 'A'} · ${mk.name ?? 'Event'}` : MARK_NAME[mk.kind]}
             </button>
           ))}
         </div>

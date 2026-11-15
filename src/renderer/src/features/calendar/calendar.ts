@@ -134,6 +134,8 @@ export function calendarMonth(year: number, month: number, input: CalendarInput)
   return { year, month, weeks, ...total, planned }
 }
 
+export const MARK_NAME: Record<DayMark['kind'], string> = { event: 'Event', rest: 'Rest day', sick: 'Sick', travel: 'Travel' }
+
 /** How strongly to shade a day: 0 (no load) to 3 (a big day), by TSS. */
 export function loadBand(tss: number): 0 | 1 | 2 | 3 {
   if (tss <= 0) return 0

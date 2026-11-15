@@ -6,12 +6,15 @@ import { PageHeader } from '../../ui/PageHeader'
 import { cn } from '../../ui/cn'
 import { IntervalsImport } from './IntervalsImport'
 import { MonthCalendar } from './MonthCalendar'
+import { DayDialog } from './DayDialog'
+import type { CalendarDay } from './calendar'
 
 /** The training calendar: what is planned, what was done, and the volume of both. */
 export function CalendarPage() {
   const [notice, setNotice] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [day, setDay] = useState<CalendarDay | null>(null)
   const input = useRef<HTMLInputElement>(null)
 
   /** FIT files from a Garmin or other watch: rides go to History, runs, swims and strength sessions onto the calendar. */
@@ -44,7 +47,7 @@ export function CalendarPage() {
     >
       <PageHeader
         title="Calendar"
-        subtitle="Planned workouts, rides and other training, a month at a time. Drag a planned workout to move it."
+        subtitle="Planned workouts, rides and other training, a month at a time. Drag a planned workout to move it, or click a day's number to add an event or a day off."
         actions={
           <>
             <IntervalsImport onNotice={setNotice} />
@@ -60,7 +63,8 @@ export function CalendarPage() {
           {notice.text}
         </div>
       )}
-      <MonthCalendar />
+      <MonthCalendar onDay={setDay} />
+      {day && <DayDialog day={day} onClose={() => setDay(null)} />}
     </div>
   )
 }
