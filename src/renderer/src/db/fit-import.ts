@@ -3,6 +3,7 @@
 import { FitImportError, importFitActivity, importOtherActivity, splitMultisport, type DecodedFit } from '@core/fit/import'
 import { activityName } from '@core/fit/sport'
 import { hrLoad, lthrFor } from '@core/metrics/hr-load'
+import { groupOfFitSport } from '@core/sport/group'
 import { finalizeRide } from '@core/ride/finalize'
 import { athleteSnapshot } from './athlete-repo'
 import { db } from './db'
@@ -100,7 +101,7 @@ async function saveOtherActivity(fileName: string, decoded: DecodedFit, starts: 
   if (starts.some((s) => Math.abs(s - a.startedAt) < SAME_RIDE_MS)) throw new FitImportError('no-records', 'Already on your calendar.')
   const athlete = await athleteSnapshot(a.startedAt)
   const id = `act-${a.startedAt.toString(36)}`
-  const name = activityName(a.sport, a.startedAt)
+  const name = activityName(a.sport, a.startedAt, a.subSport)
   await db().activities.put({
     id,
     startedAt: a.startedAt,
@@ -116,6 +117,8 @@ async function saveOtherActivity(fileName: string, decoded: DecodedFit, starts: 
     garminLoad: a.garminLoad,
     device: a.device,
     fileName,
+    source: 'fit',
+    group: groupOfFitSport(a.sport, a.subSport),
   })
   starts.push(a.startedAt)
   return { name, id }

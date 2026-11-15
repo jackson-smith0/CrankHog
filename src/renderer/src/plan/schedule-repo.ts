@@ -1,6 +1,7 @@
 // Scheduled workouts in IndexedDB. What a scheduled workout is, and when it
 // counts as done, is in @core/workout/schedule.
-import type { DateKey, ScheduledWorkout } from '@core/workout/schedule'
+import type { SportGroup } from '@core/sport/group'
+import type { DateKey, PlannedSession, ScheduledWorkout } from '@core/workout/schedule'
 import { db } from '../db/db'
 import { movePlanWorkout, removePlanWorkout } from './plans-repo'
 
@@ -15,6 +16,13 @@ export async function listScheduled(from: DateKey, to: DateKey): Promise<Schedul
 /** Puts a library workout on a day. */
 export async function scheduleWorkout(date: DateKey, workout: { id: string; name: string }): Promise<ScheduledWorkout> {
   const entry: ScheduledWorkout = { id: newId(), date, workoutId: workout.id, workout: null, name: workout.name, source: 'manual', createdAt: Date.now() }
+  await db().schedule.put(entry)
+  return entry
+}
+
+/** Plans a session that isn't a bike workout: a run, a swim, a squash game, or a ride without steps. */
+export async function scheduleSession(date: DateKey, sport: SportGroup, name: string, session: PlannedSession): Promise<ScheduledWorkout> {
+  const entry: ScheduledWorkout = { id: newId(), date, workoutId: null, workout: null, name, source: 'manual', sport, session, createdAt: Date.now() }
   await db().schedule.put(entry)
   return entry
 }

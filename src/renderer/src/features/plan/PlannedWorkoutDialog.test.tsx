@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/db'
-import { listScheduled, scheduleWorkout } from '../../plan/schedule-repo'
+import { listScheduled, scheduleSession, scheduleWorkout } from '../../plan/schedule-repo'
 import { PlannedWorkoutDialog } from './PlannedWorkoutDialog'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => async () => undefined }))
@@ -37,5 +37,17 @@ describe('PlannedWorkoutDialog', () => {
     render(<PlannedWorkoutDialog entry={e} status="today" onClose={() => undefined} />)
     await act(async () => fireEvent.click(screen.getByTestId('planned-ride')))
     expect(screen.getByText(/no longer in your library/)).toBeTruthy()
+  })
+
+  it('shows a planned run with what was planned, and no ride button', async () => {
+    const e = await scheduleSession('2026-11-18', 'run', 'Long run', { label: 'Long run', durationS: 5400, distanceM: 18_000, effort: 'easy', load: 60 })
+    render(<PlannedWorkoutDialog entry={e} status="planned" onClose={() => undefined} />)
+    const details = screen.getByTestId('planned-session-details').textContent ?? ''
+    expect(details).toMatch(/Run: Long run/)
+    expect(details).toMatch(/1h 30m/)
+    expect(details).toMatch(/Easy/)
+    expect(details).toMatch(/60 TSS/)
+    expect(screen.queryByTestId('planned-ride')).toBeNull()
+    expect(screen.getByText(/turns green once a run lands on its day/)).toBeTruthy()
   })
 })

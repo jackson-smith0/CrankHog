@@ -4,7 +4,8 @@ import { Link } from '@tanstack/react-router'
 import { Battery, BatteryLow, BatteryMedium, Bike, Calendar, Flame, Gauge, Moon, Mountain, Sunrise, Trophy, Zap, type LucideIcon } from 'lucide-react'
 import { computeAchievements, computeStreaks, type AchievementIcon, type AchievementRide } from '@core/metrics/achievements'
 import { suggestNextWorkout } from '@core/workout/suggest'
-import { dateKey, todaysWorkout } from '@core/workout/schedule'
+import { activityGroup } from '@core/sport/group'
+import { dateKey, dateKeyToMs, todaysWorkout } from '@core/workout/schedule'
 import { listScheduled } from '../../plan/schedule-repo'
 import { nextEvent } from '../../plan/day-marks-repo'
 import { BUILTINS } from '../../workouts/library'
@@ -36,9 +37,9 @@ export function HomePage() {
 
   const data = useLiveQuery(async () => {
     const todayKey = dateKey(Date.now())
-    const [rides, ftp, profile, pmc, week, curve, schedule, event] = await Promise.all([db().rides.toArray(), ftpHistory(), currentProfile(), pmcSeries(1), weeklyLoad(1), powerCurve(), listScheduled(todayKey, todayKey), nextEvent(Date.now())])
+    const [rides, ftp, profile, pmc, week, curve, schedule, event, todaysActivities] = await Promise.all([db().rides.toArray(), ftpHistory(), currentProfile(), pmcSeries(1), weeklyLoad(1), powerCurve(), listScheduled(todayKey, todayKey), nextEvent(Date.now()), db().activities.where('startedAt').aboveOrEqual(dateKeyToMs(todayKey)).toArray()])
     const eftpW = curve.eftp.method === 'cp' ? Math.round(curve.eftp.ftpW) : null
-    return { rides, ftp, weightKg: profile?.weightKg ?? DEFAULT_WEIGHT_KG, today: pmc.at(-1) ?? null, week: week.at(-1) ?? null, eftpW, schedule, event }
+    return { rides, ftp, weightKg: profile?.weightKg ?? DEFAULT_WEIGHT_KG, today: pmc.at(-1) ?? null, week: week.at(-1) ?? null, eftpW, schedule, event, todaysActivities }
   }, [])
 
   const derived = useMemo(() => {
@@ -56,7 +57,7 @@ export function HomePage() {
       hardRidesLast7: real.filter((r) => now - r.startedAt < 7 * DAY && ((r.intensityFactor ?? 0) >= 0.85 || (r.tss ?? 0) >= 80)).length,
       hoursSinceLastRide: lastRide ? (now - lastRide.endedAt) / 3_600_000 : null,
     })
-    const planned = todaysWorkout(data.schedule, data.rides, now)
+    const planned = todaysWorkout(data.schedule, data.rides, now, data.todaysActivities.map((a) => ({ id: a.id, startedAt: a.startedAt, group: activityGroup(a) })))
     return { achievements, streaks: computeStreaks(rides, now), lastRide, suggestion, suggested: BUILTINS.find((w) => w.id === suggestion.workoutId) ?? null, planned }
   }, [data, now])
 

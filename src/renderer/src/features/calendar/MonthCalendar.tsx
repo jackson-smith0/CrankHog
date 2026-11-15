@@ -3,10 +3,14 @@ import { useNavigate } from '@tanstack/react-router'
 import { DndContext, KeyboardSensor, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { Bike, ChevronLeft, ChevronRight, CircleCheck, FlaskConical, Gauge, Mountain } from 'lucide-react'
 import type { RideSummary } from '@core/ride/types'
-import { dateKey, isDateKey } from '@core/workout/schedule'
+import { formatSportDistance } from '@core/sport/format'
+import { activityGroup } from '@core/sport/group'
+import { activityLoad } from '@core/sport/load'
+import { dateKey, entrySport, isBikeWorkout, isDateKey } from '@core/workout/schedule'
 import { volumeBetween } from '@core/workout/volume'
 import type { OtherActivity } from '../../db/db'
 import { moveScheduled } from '../../plan/schedule-repo'
+import { useSettings } from '../../stores/settings'
 import { WorkoutThumb } from '../../charts/WorkoutThumb'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
@@ -15,6 +19,7 @@ import { useNow } from '../../ui/useNow'
 import { PlannedWorkoutDialog } from '../plan/PlannedWorkoutDialog'
 import { ActivityDialog } from './ActivityDialog'
 import { sportIcon } from './sport'
+import { SportIcon } from './SportIcon'
 import { calendarMonth, MARK_NAME, shiftMonth, type CalendarDay, type PlannedOnDay } from './calendar'
 import { hoursMinutes, type WorkoutPreview } from './preview'
 import { useCalendarData } from './use-calendar-data'
@@ -165,6 +170,7 @@ function DayCell({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: d.key })
   const plannedRides = new Set(d.plannedRideIds)
+  const plannedActivities = new Set(d.plannedActivityIds)
   const items = d.rides.length + d.activities.length + d.planned.length
   // rides first, then other sports, then what is still planned
   const rides = d.rides.slice(0, MAX_CHIPS)
@@ -248,19 +254,26 @@ function DayCell({
           )
         })}
         {activities.map((a) => {
-          const Icon = sportIcon(a)
+          const asPlanned = plannedActivities.has(a.id)
+          const Icon = asPlanned ? CircleCheck : sportIcon(a)
+          const load = activityLoad(a)
           return (
             <button
               key={a.id}
               type="button"
               onClick={() => onActivity(a)}
-              title={`${a.name} · ${formatDurationShort(a.movingS)}${a.hrLoad !== null ? ` · ${Math.round(a.hrLoad)} hrTSS` : ''}${a.trainingEffect ? ` · Training Effect ${a.trainingEffect.aerobic.toFixed(1)}` : ''}`}
-              className="no-drag flex w-full items-center gap-1 rounded-md border border-line bg-panel-2 px-1.5 py-1 text-left text-[11px] leading-tight hover:border-accent"
+              title={`${a.name} · ${formatDurationShort(a.movingS)}${load !== null ? ` · ${Math.round(load)} TSS` : ''}${a.trainingEffect ? ` · Training Effect ${a.trainingEffect.aerobic.toFixed(1)}` : ''}${asPlanned ? ' · done, as planned' : ''}`}
+              className={cn(
+                'no-drag flex w-full items-center gap-1 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight hover:border-accent',
+                asPlanned ? 'border-good/60 bg-good/10' : 'border-line bg-panel-2',
+              )}
               data-testid="calendar-activity"
+              data-sport={activityGroup(a)}
+              data-done={asPlanned || undefined}
             >
-              <Icon className="size-3 shrink-0 text-ink-dim" aria-hidden />
+              <Icon className={cn('size-3 shrink-0', asPlanned ? 'text-good' : 'text-ink-dim')} aria-label={asPlanned ? 'Done, as planned' : undefined} aria-hidden={!asPlanned} />
               <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
-              {a.hrLoad !== null && <span className="shrink-0 tabular text-[10px] text-ink-faint">{Math.round(a.hrLoad)}</span>}
+              {load !== null && <span className="shrink-0 tabular text-[10px] text-ink-faint">{Math.round(load)}</span>}
             </button>
           )
         })}
@@ -311,8 +324,19 @@ function CardPreview({ preview, faded = false }: { preview: WorkoutPreview; fade
   )
 }
 
+/** "45m · 8 km", "1h 00m": a planned session's time and distance. */
+function sessionStats(e: PlannedOnDay['entry'], units: 'metric' | 'imperial'): string | null {
+  const s = e.session
+  if (!s) return null
+  const parts = [s.durationS ? formatDurationShort(s.durationS) : null, s.distanceM ? formatSportDistance(s.distanceM, entrySport(e), units) : null].filter((x): x is string => !!x)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
 function PlannedChip({ planned: p, preview, planName, onOpen }: { planned: PlannedOnDay; preview?: WorkoutPreview; planName?: string; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: p.entry.id, data: p })
+  const units = useSettings((s) => s.units)
+  const bike = isBikeWorkout(p.entry)
+  const sessionText = bike ? null : sessionStats(p.entry, units)
   const state = p.status === 'missed' ? 'missed' : p.status === 'today' ? 'planned for today' : 'planned'
   return (
     <button
@@ -321,7 +345,7 @@ function PlannedChip({ planned: p, preview, planName, onOpen }: { planned: Plann
       onClick={onOpen}
       {...attributes}
       {...listeners}
-      title={`${p.entry.name}${preview ? ` · ${statsText(preview)}` : ''} · ${state}${planName ? ` · ${planName}` : ''}. Drag to another day to move it.`}
+      title={`${p.entry.name}${preview ? ` · ${statsText(preview)}` : ''}${sessionText ? ` · ${sessionText}` : ''} · ${state}${planName ? ` · ${planName}` : ''}. Drag to another day to move it.`}
       aria-label={`${p.entry.name}, ${state}`}
       style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined}
       className={cn(
@@ -331,12 +355,18 @@ function PlannedChip({ planned: p, preview, planName, onOpen }: { planned: Plann
       )}
       data-testid="calendar-planned"
       data-status={p.status}
+      data-sport={entrySport(p.entry)}
     >
       <span className="flex items-center gap-1">
-        <Gauge className={cn('size-3 shrink-0', p.status === 'missed' ? 'text-bad' : 'text-accent')} aria-hidden />
+        <SportIcon sport={entrySport(p.entry)} workout={bike} className={cn('size-3 shrink-0', p.status === 'missed' ? 'text-bad' : 'text-accent')} aria-hidden />
         <span className="min-w-0 flex-1 truncate font-medium">{p.entry.name}</span>
       </span>
       {preview && <CardPreview preview={preview} faded={p.status === 'missed'} />}
+      {!bike && sessionText && (
+        <span className="mt-0.5 block font-display text-[11px] leading-tight tabular text-ink-dim md:text-[13px]" data-testid="calendar-card-stats">
+          {sessionText}
+        </span>
+      )}
     </button>
   )
 }

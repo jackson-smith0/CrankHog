@@ -1,9 +1,13 @@
 // Workouts scheduled on calendar days: what is planned, what was ridden, and
 // what was missed. A scheduled workout is done when a real (not simulated)
-// ride of that workout starts on its day; nothing has to be ticked off.
+// ride of that workout starts on its day; nothing has to be ticked off. A
+// planned session of another sport (a run, a swim, a squash game) is done
+// when an activity of that sport starts on its day.
 //
 // Days are local calendar dates ("2026-11-14"), never instants, so a plan
 // stays on its day across clock changes and when travelling.
+import type { SportGroup } from '../sport/group'
+import type { Effort } from '../sport/load'
 import type { Workout } from './model'
 import { parseIntervalsText } from './io/intervals-text'
 import { parseZwo } from './io/zwo'
@@ -26,8 +30,36 @@ export interface ScheduledWorkout {
   /** The training plan that put it here, and which of its items. */
   planId?: string
   planItemId?: string
+  /** The sport. Missing means a ride (every entry before multisport was one). */
+  sport?: SportGroup
+  /** A session that isn't a bike workout: a run, a swim, a squash game, or a ride planned without steps. */
+  session?: PlannedSession
+  /** The intervals.icu event CrankHog sent this session as, so a move or removal can follow it there. */
+  pushedExternalId?: string
   createdAt: number
 }
+
+/** What is planned for a session with no bike workout: its length, how hard, and maybe its steps. */
+export interface PlannedSession {
+  /** "Squash", "Long run": shown with the sport. */
+  label?: string
+  durationS?: number | null
+  distanceM?: number | null
+  effort?: Effort
+  /** Planned load, when the rider gave one or the steps give one. */
+  load?: number | null
+  notes?: string
+  /** A run or swim workout in the library (src/core/multisport). */
+  sessionWorkoutId?: string
+  /** The session's steps in intervals.icu text, for one imported or pasted without a library copy. */
+  text?: string
+}
+
+/** The entry's sport: a ride unless it says otherwise. */
+export const entrySport = (e: Pick<ScheduledWorkout, 'sport'>): SportGroup => e.sport ?? 'ride'
+
+/** A bike workout CrankHog can play, as opposed to a session done elsewhere. */
+export const isBikeWorkout = (e: Pick<ScheduledWorkout, 'workoutId' | 'workout' | 'sport'>): boolean => entrySport(e) === 'ride' && (e.workoutId !== null || e.workout !== null)
 
 export type ScheduleStatus = 'planned' | 'today' | 'done' | 'missed'
 
@@ -69,28 +101,60 @@ export function addDays(key: DateKey, n: number): DateKey {
 /** The workout an entry plays: its library id, or the id of the workout it carries. */
 export const plannedWorkoutId = (e: ScheduledWorkout): string | null => e.workoutId ?? e.workout?.id ?? null
 
+/** What scheduling needs to know about an activity that isn't a ride in the history. */
+export interface ScheduleActivity {
+  id: string
+  startedAt: number
+  group: SportGroup
+}
+
 /**
- * Which ride completed each scheduled workout: a real ride of the same
- * workout on the same day. One ride completes one entry, earliest planned first.
+ * Which ride or activity completed each scheduled entry, by id.
+ * - A bike workout is done by a real ride of the same workout on the same day.
+ * - Any other session is done by an activity of its sport on its day; a ride
+ *   planned without a workout is also done by any real ride that day.
+ * One ride or activity completes one entry, earliest planned first, and bike
+ * workouts claim their rides before sessions do.
  */
-export function completions(entries: readonly ScheduledWorkout[], rides: readonly ScheduleRide[]): Map<string, string> {
+export function completions(entries: readonly ScheduledWorkout[], rides: readonly ScheduleRide[], activities: readonly ScheduleActivity[] = []): Map<string, string> {
   const byDayAndWorkout = new Map<string, ScheduleRide[]>()
+  const ridesByDay = new Map<string, ScheduleRide[]>()
   for (const r of rides) {
-    if (r.simulated || !r.workoutId) continue
-    const k = `${dateKey(r.startedAt)}|${r.workoutId}`
-    const list = byDayAndWorkout.get(k)
-    if (list) list.push(r)
-    else byDayAndWorkout.set(k, [r])
+    if (r.simulated) continue
+    push(ridesByDay, dateKey(r.startedAt), r)
+    if (r.workoutId) push(byDayAndWorkout, `${dateKey(r.startedAt)}|${r.workoutId}`, r)
   }
-  for (const list of byDayAndWorkout.values()) list.sort((a, b) => a.startedAt - b.startedAt)
+  const activitiesByDay = new Map<string, ScheduleActivity[]>()
+  for (const a of activities) push(activitiesByDay, `${dateKey(a.startedAt)}|${a.group}`, a)
+  for (const list of [...byDayAndWorkout.values(), ...ridesByDay.values(), ...activitiesByDay.values()]) list.sort((a, b) => a.startedAt - b.startedAt)
+
   const done = new Map<string, string>()
+  const used = new Set<string>()
   const ordered = [...entries].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+  const take = <T extends { id: string }>(list: T[] | undefined): T | undefined => {
+    const hit = list?.find((x) => !used.has(x.id))
+    if (hit) used.add(hit.id)
+    return hit
+  }
   for (const e of ordered) {
+    if (!isBikeWorkout(e)) continue
     const w = plannedWorkoutId(e)
-    const ride = w ? byDayAndWorkout.get(`${e.date}|${w}`)?.shift() : undefined
+    const ride = w ? take(byDayAndWorkout.get(`${e.date}|${w}`)) : undefined
     if (ride) done.set(e.id, ride.id)
   }
+  for (const e of ordered) {
+    if (isBikeWorkout(e)) continue
+    const sport = entrySport(e)
+    const hit = take(activitiesByDay.get(`${e.date}|${sport}`)) ?? (sport === 'ride' ? take(ridesByDay.get(e.date)) : undefined)
+    if (hit) done.set(e.id, hit.id)
+  }
   return done
+}
+
+function push<T>(m: Map<string, T[]>, k: string, v: T): void {
+  const list = m.get(k)
+  if (list) list.push(v)
+  else m.set(k, [v])
 }
 
 export function scheduleStatus(e: ScheduledWorkout, done: boolean, today: DateKey): ScheduleStatus {
@@ -100,9 +164,9 @@ export function scheduleStatus(e: ScheduledWorkout, done: boolean, today: DateKe
 }
 
 /** The first of today's workouts not ridden yet, or null. */
-export function todaysWorkout(entries: readonly ScheduledWorkout[], rides: readonly ScheduleRide[], now: number): ScheduledWorkout | null {
+export function todaysWorkout(entries: readonly ScheduledWorkout[], rides: readonly ScheduleRide[], now: number, activities: readonly ScheduleActivity[] = []): ScheduledWorkout | null {
   const today = dateKey(now)
-  const done = completions(entries, rides)
+  const done = completions(entries, rides, activities)
   return (
     entries
       .filter((e) => e.date === today && !done.has(e.id))

@@ -7,7 +7,8 @@
 // A workout of the rider's own in a plan is filed there (folder 'plan' and the
 // plan's id), for the library's "In a plan" badge and the builder's Folder.
 import { isBlocking, layOutPlan, nextMonday, parseDatedFileName, type PlanItem, type TrainingPlan } from '@core/workout/plan'
-import { completions, dateKey, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
+import { activityGroup } from '@core/sport/group'
+import { addDays, completions, dateKey, dateKeyToMs, isBikeWorkout, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
 import type { Workout } from '@core/workout/model'
 import { currentFtp, DEFAULT_FTP_W } from '../db/athlete-repo'
 import { db } from '../db/db'
@@ -143,11 +144,21 @@ async function workoutNames(ids: readonly string[]): Promise<Map<string, string>
 /** Brings the calendar in line with the plan (see the top of this file). */
 async function relay(plan: TrainingPlan): Promise<void> {
   const d = db()
-  await d.transaction('rw', [d.schedule, d.rides, d.dayMarks, d.workouts], async () => {
+  await d.transaction('rw', [d.schedule, d.rides, d.dayMarks, d.workouts, d.activities, d.sessionWorkouts], async () => {
     const mine = (await d.schedule.toArray()).filter((e) => e.planId === plan.id)
     const workoutIds = [...new Set(mine.map((e) => e.workoutId).filter((x): x is string => !!x))]
     const rides = workoutIds.length > 0 ? await d.rides.where('workoutId').anyOf(workoutIds).toArray() : []
-    const done = completions(mine, rides.map((r) => ({ id: r.id, startedAt: r.startedAt, workoutId: r.workoutId, simulated: r.simulated })))
+    // a run or swim in the plan is done by an activity on its day (a ride without a workout, by any ride)
+    const sessionDays = mine.filter((e) => !isBikeWorkout(e)).map((e) => e.date)
+    const span = sessionDays.length > 0 ? ([dateKeyToMs(sessionDays.reduce((a, b) => (a < b ? a : b))), dateKeyToMs(addDays(sessionDays.reduce((a, b) => (a > b ? a : b)), 1))] as const) : null
+    const activities = span ? await d.activities.where('startedAt').between(span[0], span[1]).toArray() : []
+    const sameDayRides = span ? await d.rides.where('startedAt').between(span[0], span[1]).toArray() : []
+    const allRides = [...new Map([...rides, ...sameDayRides].map((r) => [r.id, r])).values()]
+    const done = completions(
+      mine,
+      allRides.map((r) => ({ id: r.id, startedAt: r.startedAt, workoutId: r.workoutId, simulated: r.simulated })),
+      activities.map((a) => ({ id: a.id, startedAt: a.startedAt, group: activityGroup(a) })),
+    )
     const doneItems = new Set(mine.filter((e) => done.has(e.id)).map((e) => e.planItemId))
     await d.schedule.bulkDelete(mine.filter((e) => !done.has(e.id)).map((e) => e.id))
     if (!plan.onCalendar) return

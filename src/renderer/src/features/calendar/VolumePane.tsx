@@ -5,7 +5,7 @@ import { sportsIn, type VolumeSide, type VolumeTotals } from '@core/workout/volu
 import { useSettings } from '../../stores/settings'
 import { cn } from '../../ui/cn'
 import { formatDurationShort } from '../../ui/format'
-import { groupIcon } from './sport'
+import { SportIcon } from './SportIcon'
 
 /** Completed against planned, as a bar: green when the planned volume is met. */
 function Bar({ done, planned, label }: { done: number; planned: number; label: string }) {
@@ -42,12 +42,11 @@ function SportRows({ v }: { v: VolumeTotals }) {
   return (
     <ul className="space-y-0.5" data-testid="sport-volume">
       {sports.map((g) => {
-        const Icon = groupIcon(g)
         const done = v.completed.bySport[g]
         const planned = v.planned.bySport[g]
         return (
           <li key={g} className="flex items-center gap-1.5" data-sport={g}>
-            <Icon className="size-3 shrink-0 text-ink-dim" aria-hidden />
+            <SportIcon sport={g} className="size-3 shrink-0 text-ink-dim" aria-hidden />
             <span className="w-10 shrink-0 text-ink-dim">{SPORT_GROUP_LABEL[g]}</span>
             <span className="tabular">
               {time(done.durationS)}

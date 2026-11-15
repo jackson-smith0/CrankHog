@@ -7,7 +7,7 @@ import { projectPmc, type ProjectedPmcRow } from '@core/metrics/pmc'
 import { dailyLoad } from '@core/sport/daily-load'
 import { activityGroup } from '@core/sport/group'
 import { activityLoad } from '@core/sport/load'
-import { completions, dateKey, plannedWorkoutId, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
+import { completions, dateKey, entrySport, isBikeWorkout, plannedWorkoutId, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
 import type { VolumeInput } from '@core/workout/volume'
 import { db } from '../../db/db'
 import { useFtp } from '../../db/use-athlete'
@@ -18,13 +18,20 @@ import { previewsFor } from './preview'
 export interface PlannedStats {
   durationS: number | null
   tss: number | null
+  distanceM?: number | null
 }
 
-/** Length and TSS of each scheduled workout at `ftpW`: its library entry, or the workout it carries. */
+/**
+ * Length and TSS of each scheduled workout at `ftpW`: its library entry, or
+ * the workout it carries. A session of another sport (or a ride without a
+ * workout) has what was planned for it.
+ */
 export function plannedStats(schedule: readonly ScheduledWorkout[], library: ReadonlyMap<string, PlannedStats>, ftpW: number): Map<string, PlannedStats> {
   const out = new Map<string, PlannedStats>()
   for (const e of schedule) {
-    if (e.workout) {
+    if (!isBikeWorkout(e)) {
+      out.set(e.id, { durationS: e.session?.durationS ?? null, tss: e.session?.load ?? null, distanceM: e.session?.distanceM ?? null })
+    } else if (e.workout) {
       out.set(e.id, plannedStatsOf(e.workout, describeWorkout(e.workout, ftpW).stats))
     } else {
       const id = plannedWorkoutId(e)
@@ -60,9 +67,13 @@ export function useCalendarData(from: number, to: number, today: DateKey) {
   const volumeInput = useMemo((): Omit<VolumeInput, 'today'> => {
     const s = schedule ?? []
     const r = rides ?? []
-    const done = completions(s, r.map((x) => ({ id: x.id, startedAt: x.startedAt, workoutId: x.workoutId, simulated: x.simulated })))
+    const done = completions(
+      s,
+      r.map((x) => ({ id: x.id, startedAt: x.startedAt, workoutId: x.workoutId, simulated: x.simulated })),
+      (activities ?? []).map((a) => ({ id: a.id, startedAt: a.startedAt, group: activityGroup(a) })),
+    )
     return {
-      planned: s.map((e) => ({ date: e.date, durationS: stats.get(e.id)?.durationS ?? null, load: stats.get(e.id)?.tss ?? null, done: done.has(e.id) })),
+      planned: s.map((e) => ({ date: e.date, durationS: stats.get(e.id)?.durationS ?? null, load: stats.get(e.id)?.tss ?? null, done: done.has(e.id), sport: entrySport(e), distanceM: stats.get(e.id)?.distanceM ?? null })),
       rides: r.map((x) => ({ startedAt: x.startedAt, movingS: x.movingS, tss: x.tss, simulated: x.simulated, distanceM: x.distanceM })),
       activities: (activities ?? []).map((a) => ({ startedAt: a.startedAt, movingS: a.movingS, load: activityLoad(a), sport: activityGroup(a), distanceM: a.distanceM })),
     }
@@ -76,8 +87,10 @@ export function useCalendarData(from: number, to: number, today: DateKey) {
   /** Fitness, fatigue and form on each day of the grid: from rides up to today, projected from planned workouts after it. */
   const fitness = useMemo((): Map<DateKey, ProjectedPmcRow> => {
     if (!history || history.length === 0) return new Map()
-    const byId = new Map((library ?? []).map((e) => [e.workout.id, plannedStatsOf(e.workout, e.stats).tss]))
-    const planned = (ahead ?? []).filter((e) => e.date > today).map((e) => ({ date: e.date, tss: (e.workout ? plannedStatsOf(e.workout, describeWorkout(e.workout, ftpW).stats).tss : byId.get(plannedWorkoutId(e) ?? '')) ?? 0 }))
+    const byId = new Map((library ?? []).map((e) => [e.workout.id, plannedStatsOf(e.workout, e.stats)]))
+    const upcoming = (ahead ?? []).filter((e) => e.date > today)
+    const aheadStats = plannedStats(upcoming, byId, ftpW)
+    const planned = upcoming.map((e) => ({ date: e.date, tss: aheadStats.get(e.id)?.tss ?? 0 }))
     return new Map(projectPmc(history, planned, { today, from: fromKey, to: toKey }).map((r) => [r.date, r]))
   }, [history, ahead, library, ftpW, today, fromKey, toKey])
 

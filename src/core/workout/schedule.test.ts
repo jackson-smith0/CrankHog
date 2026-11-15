@@ -70,6 +70,38 @@ describe('completions', () => {
     const imported = entry('a', '2026-11-14', '', { workoutId: null, workout: { id: 'intervals:42', name: 'Over-unders', tags: [], sportType: 'bike', segments: [], source: 'import' }, source: 'intervals' })
     expect(completions([imported], [ride('r1', at(2026, 11, 14), 'intervals:42')]).get('a')).toBe('r1')
   })
+
+  const session = (id: string, date: string, sport: ScheduledWorkout['sport'], createdAt = 0) => entry(id, date, '', { workoutId: null, sport, session: { durationS: 3600 }, createdAt })
+  const act = (id: string, startedAt: number, group: 'ride' | 'run' | 'swim' | 'other') => ({ id, startedAt, group })
+
+  it('a run, swim or squash game on its day completes a planned session of that sport', () => {
+    const e = [session('run', '2026-11-14', 'run'), session('swim', '2026-11-14', 'swim'), session('sq', '2026-11-15', 'other')]
+    const done = completions(e, [], [act('a1', at(2026, 11, 14, 7), 'run'), act('a2', at(2026, 11, 15, 20), 'other'), act('a3', at(2026, 11, 15), 'swim')])
+    expect([...done.entries()].sort()).toEqual([
+      ['run', 'a1'],
+      ['sq', 'a2'],
+    ])
+  })
+
+  it('one activity completes one session, earliest planned first', () => {
+    const e = [session('b', '2026-11-14', 'run', 2), session('a', '2026-11-14', 'run', 1)]
+    expect([...completions(e, [], [act('a1', at(2026, 11, 14), 'run')]).entries()]).toEqual([['a', 'a1']])
+  })
+
+  it('a ride planned without a workout is done by any real ride that day, after bike workouts claim theirs', () => {
+    const e = [entry('w', '2026-11-14', 'w', { createdAt: 5 }), session('long', '2026-11-14', 'ride', 1)]
+    const rides = [ride('r1', at(2026, 11, 14, 7), 'w')]
+    // the only ride is the workout's, so the free ride session stays open
+    expect([...completions(e, rides).entries()]).toEqual([['w', 'r1']])
+    const done = completions(e, [...rides, ride('r2', at(2026, 11, 14, 19), 'other')])
+    expect(done.get('long')).toBe('r2')
+    // an outdoor ride from intervals.icu does it too
+    expect(completions([session('long', '2026-11-14', 'ride')], [], [act('a1', at(2026, 11, 14), 'ride')]).get('long')).toBe('a1')
+  })
+
+  it('never completes a bike workout with an activity', () => {
+    expect(completions([entry('w', '2026-11-14', 'w')], [], [act('a1', at(2026, 11, 14), 'ride')]).size).toBe(0)
+  })
 })
 
 describe('scheduleStatus', () => {
