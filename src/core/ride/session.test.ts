@@ -73,7 +73,7 @@ function setup(opts: { autoPause?: boolean; plan?: RidePlan; layer?: PlanLayer; 
 }
 
 describe('RideSession', () => {
-  it('records a free ride with a user pause and finalizes to a valid FIT', async () => {
+  it('records a free ride with a user pause and finalizes to a FIT with the pause taken out', async () => {
     const { session, ride, journal } = setup()
     session.start()
     await ride(600, 200)
@@ -100,7 +100,9 @@ describe('RideSession', () => {
       athlete: { ftpW: 250, weightKg: 75, lthr: 165 }, records, utcOffsetMin: -420, softwareVersion: 10, now: Date.now(),
     })
     expect(fin.summary.movingS).toBe(records.length)
-    expect(fin.summary.elapsedS).toBeGreaterThanOrEqual(records.length + 58)
+    // the 60 s pause isn't in the saved ride: elapsed is moving time
+    expect(fin.summary.elapsedS).toBe(records.length)
+    expect(fin.summary.startedAt).toBe(records[0]!.ts - 1000)
     expect(fin.summary.avgPower).toBeGreaterThan(200)
     expect(fin.summary.np).toBeGreaterThan(200)
     expect(fin.summary.tss).toBeGreaterThan(0)
@@ -109,7 +111,89 @@ describe('RideSession', () => {
     const { messages } = dec.read()
     expect(messages.recordMesgs).toHaveLength(records.length)
     expect(messages.sessionMesgs![0]!.subSport).toBe('virtualActivity')
-    expect(messages.eventMesgs!.filter((e) => e.event === 'timer').map((e) => e.eventType)).toEqual(['start', 'stopAll', 'start', 'stopAll'])
+    expect(messages.eventMesgs!.filter((e) => e.event === 'timer').map((e) => e.eventType)).toEqual(['start', 'stopAll'])
+    expect(messages.sessionMesgs![0]!.totalElapsedTime).toBe(records.length)
+    expect(messages.sessionMesgs![0]!.totalTimerTime).toBe(records.length)
+  })
+
+  it('waits for the first pedal stroke before the clock starts', async () => {
+    const plan: RidePlan = {
+      kind: 'workout',
+      name: 'Steady',
+      tick: ({ movingS }) => ({
+        desired: { mode: 'erg', watts: 180 }, targetW: 180, segmentIndex: 0, segmentLabel: 'Steady', segmentKind: 'steady',
+        segmentRemainingS: 600 - movingS, segmentElapsedS: movingS, nextLabel: null, remainingS: 600 - movingS, finished: false,
+      }),
+    }
+    const { session, ride, events, journal, controller, clock } = setup({ plan })
+    session.start()
+    expect(session.currentState).toBe('waiting')
+    // the trainer already holds the first target
+    expect(controller.snapshot.desired).toEqual({ mode: 'erg', watts: 180 })
+    await ride(25 * 60, 0, 0) // a long wait on the bike, not pedalling
+    await ride(30, null, null, null) // and some with the trainer asleep
+    expect(session.currentState).toBe('waiting')
+    expect(session.records).toHaveLength(0)
+    expect(session.snapshot()).toMatchObject({ state: 'waiting', elapsedS: 0, movingS: 0 })
+    expect(session.planTick.remainingS).toBe(600)
+    expect(journal.files.size).toBe(0)
+    expect(events.some((e) => e.type === 'state' && e.state === 'paused')).toBe(false)
+
+    const firstStroke = clock.wallMs() + 250
+    await ride(120, 200)
+    expect(session.currentState).toBe('riding')
+    const { records } = await session.finish()
+    expect(records.length).toBeGreaterThanOrEqual(119)
+    expect(records.every((r) => r.power === 200)).toBe(true)
+    // the first second starts at the first stroke (record times are whole seconds)
+    expect(Math.abs(records[0]!.ts - (firstStroke + 1000))).toBeLessThan(1000)
+    const j = parseJournal(journal.files.get('ride-test-01')!.join('\n'))
+    expect(j.meta?.startedAt).toBe(firstStroke)
+    expect(session.snapshot().elapsedS).toBeLessThanOrEqual(121)
+  })
+
+  it('begins at once when the rider is already pedaling as they press start', () => {
+    const { session, hub, clock } = setup()
+    hub.ingest({ metric: 'power', value: 150, tMono: clock.now(), sourceId: 'trainer:ftms' })
+    session.start()
+    expect(session.currentState).toBe('riding')
+  })
+
+  it('starts on a cadence reading alone, and whether or not auto-pause is on', async () => {
+    const { session, ride } = setup({ autoPause: false })
+    session.start()
+    await ride(10, 0, 0)
+    expect(session.currentState).toBe('waiting')
+    await ride(1, null, 60)
+    expect(session.currentState).toBe('riding')
+  })
+
+  it('starts when the rider asks, for a bike with no power or cadence', async () => {
+    const { session, ride } = setup()
+    session.start()
+    session.pause('system') // the Mac sleeping meanwhile changes nothing
+    expect(session.currentState).toBe('waiting')
+    session.command({ type: 'togglePause' })
+    expect(session.currentState).toBe('riding')
+    await ride(10, null, null, 140)
+    expect(session.records.length).toBeGreaterThanOrEqual(9)
+  })
+
+  it('finishes a ride that never started without recording or journalling anything', async () => {
+    const { session, ride, journal, events } = setup()
+    let closed = false
+    journal.sink.close = async () => {
+      closed = true
+    }
+    session.start()
+    await ride(30, 0, 0)
+    const { records, events: journalEvents } = await session.finish()
+    expect(records).toEqual([])
+    expect(journalEvents).toEqual([])
+    expect(journal.files.size).toBe(0)
+    expect(closed).toBe(false)
+    expect(session.currentState).toBe('finished')
+    expect(events.at(-1)).toEqual({ type: 'state', state: 'finished' })
   })
 
   it('auto-pauses on real zeros (not on missing data) and resumes when pedalling', async () => {

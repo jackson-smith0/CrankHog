@@ -1,9 +1,12 @@
 // Turns a finished session's records into the stored ride: summary row,
 // columnar streams and the FIT file. Pure: the renderer persists the output.
+// A ride recorded here loses its pauses and dead edges first (trim.ts), so the
+// history, the FIT and the uploads all show elapsed time equal to moving time.
 import { encodeFitActivity, type FitLapSummary } from '../fit/activity'
 import { WPrimeBalance, averagePower, kilojoules, maxPower, normalizedPower, summarizeRide } from '../metrics'
 import type { RideRecord } from './recorder'
 import { recordsToStreams, type RideStreams } from './streams'
+import { trimDeadTime } from './trim'
 import type { AthleteSnapshot, LapRow, RideKind, RideSummary } from './types'
 
 export interface FinalizeInput {
@@ -65,7 +68,8 @@ export function computeLaps(records: RideRecord[], labels: string[] = []): LapRo
         startIndex: start,
         endIndex: i - 1,
         durationS: slice.length,
-        label: labels[index],
+        // by the recorder's lap number, so a lap that was all dead time doesn't shift the labels after it
+        label: labels[records[start]!.lap],
         avgPower: round(averagePower(power)),
         maxPower: round(maxPower(power)),
         np: round(slice.length >= 30 ? normalizedPower(power) : null),
@@ -84,7 +88,9 @@ export function computeLaps(records: RideRecord[], labels: string[] = []): LapRo
 }
 
 export function finalizeRide(input: FinalizeInput): FinalizedRide {
-  const { records, athlete } = input
+  const { athlete } = input
+  // someone else's file is kept as their device recorded it
+  const records = input.imported ? input.records : trimDeadTime(input.records)
   const power = records.map((r) => r.power)
   const s = summarizeRide({
     power,

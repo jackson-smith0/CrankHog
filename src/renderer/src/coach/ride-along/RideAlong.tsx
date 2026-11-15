@@ -131,7 +131,8 @@ function advance(now: number, ftpW: number): void {
   const dt = race.last === 0 ? 0 : (now - race.last) / 1000
   race.last = now
   const f = liveStore.getState()
-  const paused = ride.snapshot?.state === 'paused'
+  // waiting for the first pedal stroke holds still too
+  const paused = ride.snapshot?.state === 'paused' || ride.snapshot?.state === 'waiting'
   // nobody is riding: hold still rather than let the coach ride off
   if (paused || (!ride.active && !(f.power3s ?? f.power))) return
   race.state = stepRideAlong(race.state, dt, { watts: f.power3s ?? f.power, kmh: f.speedKmh }, coachPaceW(f.trainer.targetW, ftpW))

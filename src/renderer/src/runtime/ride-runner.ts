@@ -6,6 +6,7 @@ import { FuelingTimer } from '@core/ride/fueling'
 import type { RidePlan } from '@core/ride/plan'
 import type { RideRecord } from '@core/ride/recorder'
 import { RideSession, type JournalSink } from '@core/ride/session'
+import { trimDeadTime } from '@core/ride/trim'
 import { WorkoutPlan } from '@core/ride/workout-plan'
 import type { RideKind } from '@core/ride/types'
 import type { LiveEngine } from '@core/ride/live-engine'
@@ -194,7 +195,8 @@ export class RideRunner {
     try {
       const { records } = await session.finish()
       this.detach()
-      if (records.length < 5) {
+      // judged on what would be saved: a ride that was all standing still isn't one
+      if (trimDeadTime(records).length < 5) {
         dropMoments()
         await bridge().invoke('journal.remove', { rideId: session.rideId })
         rideStore.setState({ active: false, rideId: null, snapshot: null, metrics: null, saving: false, ...ENDED })

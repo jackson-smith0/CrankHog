@@ -64,8 +64,13 @@ export function MiniHudApp() {
           {r?.nextLabel ? ` · next ${r.nextLabel}` : ''}
         </span>
         <span className="no-drag flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button type="button" aria-label="Pause or resume" className="rounded-md p-1 hover:bg-panel-3" onClick={() => send({ type: 'togglePause' })}>
-            {r?.state === 'paused' ? <Play className="size-4" /> : <Pause className="size-4" />}
+          <button
+            type="button"
+            aria-label={r?.state === 'waiting' ? 'Start now' : 'Pause or resume'}
+            className="rounded-md p-1 hover:bg-panel-3"
+            onClick={() => send({ type: 'togglePause' })}
+          >
+            {r?.state === 'paused' || r?.state === 'waiting' ? <Play className="size-4" /> : <Pause className="size-4" />}
           </button>
           <button type="button" aria-label="Skip interval" className="rounded-md p-1 hover:bg-panel-3" onClick={() => send({ type: 'skip' })}>
             <SkipForward className="size-4" />

@@ -56,6 +56,9 @@ async function rideRoute(route: Route, opts: Omit<RoutePlanOptions, 'rider'>, wa
     const tick = session.planTick
     if (isRouteTick(tick)) ticks.push({ t: now, tick })
   })
+  // already rolling when they press start, so the ride begins on the press (it waits for the first pedal stroke)
+  rig.world.setBehavior({ kind: 'hold', watts: watts(0) })
+  await rig.advance(2000, 250)
   session.start()
   for (let s = 0; s < seconds; s += 5) {
     rig.world.setBehavior({ kind: 'hold', watts: watts(s) })

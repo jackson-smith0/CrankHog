@@ -81,7 +81,7 @@ ${controls}
       $('elapsed').textContent = r ? fmt(r.movingS) : '—';
       $('tss').textContent = r && r.tss != null ? 'TSS ' + Math.round(r.tss) + ' · ' + Math.round(r.kj) + ' kJ' : '';
       $('coach').textContent = r && r.coachLine ? '“' + r.coachLine + '”' : '';
-      const p = $('pause'); if (p && r) p.textContent = r.state === 'paused' ? 'Resume' : 'Pause';
+      const p = $('pause'); if (p && r) p.textContent = r.state === 'waiting' ? 'Start now' : r.state === 'paused' ? 'Resume' : 'Pause';
     };
   }
   document.querySelectorAll('button[data-cmd]').forEach((b) => b.addEventListener('click', () => {
