@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanSurvey } from './plan'
-import { builtinSkeleton, closestAnyLength, fillSkeleton, planWeeks, skeletonDates, type LibraryCandidate, type PlanSkeleton } from './plan-builder'
+import { baseSkeleton, builtinSkeleton, closestAnyLength, fillSkeleton, fromStart, planWeeks, skeletonDates, type LibraryCandidate, type PlanSkeleton } from './plan-builder'
 
 // 16 Nov 2026 is a Monday.
 const survey = (over: Partial<PlanSurvey> = {}): PlanSurvey => ({
@@ -39,6 +39,17 @@ describe('builtinSkeleton', () => {
     ])
     // the plan opens with a ramp test, to size every workout after it
     expect(week1!.sessions[0]).toMatchObject({ day: 1, type: 'test' })
+  })
+
+  it('starts a mid-week plan on its start day, still with the ramp test first', () => {
+    // a Wednesday start: Tuesday's ride is not in the plan, and the test moves to Thursday
+    const s = builtinSkeleton(survey({ startDate: '2026-11-18' }), 10, true)
+    expect(s.weeks[0]!.sessions.map((x) => [x.day, x.type])).toEqual([
+      [3, 'test'],
+      [5, 'tempo'],
+      [6, 'long'],
+    ])
+    expect(skeletonDates(s, '2026-11-18')[0]).toEqual({ date: '2026-11-19', week: 0, session: 0 })
   })
 
   it('makes recovery weeks lighter and easy, and the taper lighter still with one sharp session', () => {
@@ -133,5 +144,27 @@ describe('closestAnyLength', () => {
     expect(closestAnyLength({ day: 0, type: 'sweet-spot', minutes: 180, intent: '' }, lib)).toBe('ss-60')
     expect(closestAnyLength({ day: 0, type: 'threshold', minutes: 60, intent: '' }, lib)).toBe('end-90')
     expect(closestAnyLength({ day: 0, type: 'threshold', minutes: 60, intent: '' }, [])).toBeNull()
+  })
+})
+
+describe('baseSkeleton and fromStart', () => {
+  it('rides base with a recovery week every fourth, opening with a ramp test', () => {
+    const s = baseSkeleton(survey(), 5)
+    expect(s.weeks.map((w) => w.phase)).toEqual(['base', 'base', 'base', 'recovery', 'base'])
+    expect(s.weeks[0]!.sessions[0]).toMatchObject({ day: 1, type: 'test' })
+    expect(baseSkeleton(survey({ goal: 'endurance' }), 1).weeks[0]!.sessions[0]!.type).not.toBe('test')
+    expect(baseSkeleton(survey(), 0).weeks).toEqual([])
+  })
+
+  it('moves an AI plan’s opening test past the days before a mid-week start, into the next week if it must', () => {
+    const ai: PlanSkeleton = {
+      weeks: [
+        { phase: 'base', sessions: [{ day: 1, type: 'test', minutes: 40, intent: 'Ramp test' }, { day: 3, type: 'endurance', minutes: 60, intent: 'Easy' }] },
+        { phase: 'base', sessions: [{ day: 1, type: 'tempo', minutes: 60, intent: 'Tempo' }] },
+      ],
+    }
+    expect(fromStart(ai, '2026-11-18').weeks.map((w) => w.sessions.map((x) => [x.day, x.type, x.minutes]))).toEqual([[[3, 'test', 40]], [[1, 'tempo', 60]]])
+    expect(fromStart(ai, '2026-11-20').weeks.map((w) => w.sessions.map((x) => [x.day, x.type]))).toEqual([[], [[1, 'test']]])
+    expect(fromStart(ai, '2026-11-16')).toBe(ai)
   })
 })

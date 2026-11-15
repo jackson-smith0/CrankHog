@@ -2,7 +2,7 @@
 // (JSON schema / structured outputs) and we ALWAYS re-validate with zod,
 // because providers may drop constraints such as min/max.
 import { z } from 'zod'
-import { PHASES, SESSION_TYPES, type Phase, type SessionType } from '../workout/plan-builder'
+import { MAX_AI_WEEKS, PHASES, SESSION_TYPES, type Phase, type SessionType } from '../workout/plan-builder'
 
 const power = z.number().min(0.2).max(3).describe('Fraction of FTP, e.g. 0.88 for 88 %')
 const duration = z.number().int().min(5).max(4 * 3600).describe('Seconds')
@@ -82,7 +82,7 @@ export const PlanSkeletonSchema = z.object({
       }),
     )
     .min(1)
-    .max(26),
+    .max(MAX_AI_WEEKS),
 })
 export type PlanSkeletonOutput = z.infer<typeof PlanSkeletonSchema>
 

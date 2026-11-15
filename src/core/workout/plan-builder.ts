@@ -1,9 +1,9 @@
-// Building a training plan from a survey, the way TrainerRoad's Plan Builder
-// does: count back from the event, give each block a purpose, and spread the
-// rider's weekly hours over the days they can ride. The result is a
-// PlanSkeleton (weeks of typed sessions with lengths), which is also what the
-// AI planner returns; fillSkeleton then gives each session a real workout.
-import type { PlanSurvey } from './plan'
+// Building a training plan from a survey by classic periodization: count back
+// from the event, give each block a purpose, and spread the rider's weekly
+// hours over the days they can ride. The result is a PlanSkeleton (weeks of
+// typed sessions with lengths), which is also what the AI planner returns;
+// fillSkeleton then gives each session a real workout.
+import { weekdayOf, type PlanSurvey } from './plan'
 import { addDays, dateKeyToMs, type DateKey } from './schedule'
 
 export type SessionType = 'endurance' | 'tempo' | 'sweet-spot' | 'threshold' | 'vo2max' | 'anaerobic' | 'recovery' | 'long' | 'test'
@@ -48,6 +48,8 @@ const LONG_SHARE = 0.35
 const MIN_SESSION = 30
 const MAX_SESSION = 300
 const TEST_MINUTES = 45
+/** The longest plan the AI outlines. A plan to an event further off rides base by CrankHog's rules first (baseSkeleton). */
+export const MAX_AI_WEEKS = 26
 
 /** Weeks from the start to the event, a part week counting as one. */
 export function planWeeks(startDate: DateKey, eventDate: DateKey): number {
@@ -117,15 +119,48 @@ function week(phase: Phase, s: PlanSurvey): SkeletonWeek {
 }
 
 /**
- * A plan of `weeks` weeks from the survey. `toEvent` ends it with a
- * specialty block and a taper into the event.
+ * A plan of `weeks` weeks from the survey, from its start date. `toEvent` ends
+ * it with a specialty block and a taper into the event.
  */
 export function builtinSkeleton(survey: PlanSurvey, weeks: number, toEvent: boolean): PlanSkeleton {
   const out = phases(Math.max(1, Math.round(weeks)), survey.goal, toEvent).map((p) => week(p, survey))
-  // the plan opens with a ramp test (except for an endurance plan, or a taper alone)
-  const first = out[0]?.sessions[0]
-  if (first && survey.goal !== 'endurance' && out[0]!.phase !== 'taper') out[0]!.sessions[0] = { ...first, type: 'test', minutes: TEST_MINUTES, intent: INTENT.test }
-  return { weeks: out }
+  return withOpeningTest(fromStart({ weeks: out }, survey.startDate), survey)
+}
+
+/**
+ * `weeks` weeks of base riding, a recovery week every fourth, opening with a
+ * ramp test as builtinSkeleton does. They come before the AI's weeks in a plan
+ * longer than MAX_AI_WEEKS, so the AI's taper still lands on the event.
+ */
+export function baseSkeleton(survey: PlanSurvey, weeks: number): PlanSkeleton {
+  const out = Array.from({ length: Math.max(0, Math.round(weeks)) }, (_, i) => week((i + 1) % 4 === 0 ? 'recovery' : 'base', survey))
+  return withOpeningTest({ weeks: out }, survey)
+}
+
+/** The plan opens with a ramp test on its first ride (except an endurance plan, or a taper alone). */
+function withOpeningTest(skeleton: PlanSkeleton, survey: Pick<PlanSurvey, 'goal'>): PlanSkeleton {
+  const wi = skeleton.weeks.findIndex((w) => w.sessions.length > 0)
+  const first = skeleton.weeks[wi]
+  if (!first || survey.goal === 'endurance' || first.phase === 'taper') return skeleton
+  const sessions = [{ ...first.sessions[0]!, type: 'test' as const, minutes: TEST_MINUTES, intent: INTENT.test }, ...first.sessions.slice(1)]
+  return { weeks: skeleton.weeks.map((w, i) => (i === wi ? { ...w, sessions } : w)) }
+}
+
+/**
+ * The sessions from the start date on: the first week loses the days before
+ * a mid-week start. A test among them moves to the first ride left, so the
+ * plan still opens with it.
+ */
+export function fromStart(skeleton: PlanSkeleton, startDate: DateKey): PlanSkeleton {
+  const head = skeleton.weeks[0]
+  const from = weekdayOf(startDate)
+  if (!head || head.sessions.every((s) => s.day >= from)) return skeleton
+  const lostTest = head.sessions.find((s) => s.day < from && s.type === 'test')
+  const weeks = [{ ...head, sessions: head.sessions.filter((s) => s.day >= from) }, ...skeleton.weeks.slice(1)]
+  const wi = weeks.findIndex((w) => w.sessions.length > 0)
+  const first = weeks[wi]?.sessions[0]
+  if (!lostTest || !first || first.type === 'test') return { weeks }
+  return { weeks: weeks.map((w, i) => (i === wi ? { ...w, sessions: [{ ...first, type: 'test', minutes: lostTest.minutes, intent: lostTest.intent }, ...w.sessions.slice(1)] } : w)) }
 }
 
 /** Each session's calendar day: week w, weekday d, counted from the Monday of the start's week. Days before the start are dropped. */
