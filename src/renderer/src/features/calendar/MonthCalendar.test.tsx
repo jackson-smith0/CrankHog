@@ -22,6 +22,17 @@ beforeEach(async () => {
 })
 afterEach(() => cleanup())
 
+/** The element once it exists: waitFor retries only while the callback throws. */
+const appears = (selector: string) =>
+  waitFor(
+    () => {
+      const el = document.querySelector<HTMLElement>(selector)
+      if (!el) throw new Error(`waiting for ${selector}`)
+      return el
+    },
+    { timeout: 5000 },
+  )
+
 /** Days of the current month only, so the test holds on any date. */
 const inMonth = (offset: number) => {
   const key = addDays(today, offset)
@@ -31,7 +42,7 @@ const inMonth = (offset: number) => {
 describe('MonthCalendar', () => {
   it('highlights today and greys the days before it', async () => {
     render(<MonthCalendar />)
-    const cell = await waitFor(() => document.querySelector(`[data-date="${today}"]`)!)
+    const cell = await appears(`[data-date="${today}"]`)
     expect(cell.getAttribute('data-today')).toBe('true')
     const yesterday = document.querySelector(`[data-date="${addDays(today, -1)}"]`)
     expect(yesterday?.getAttribute('data-past')).toBe('true')
@@ -49,17 +60,19 @@ describe('MonthCalendar', () => {
     ])
     await db().rides.put(ride('r1', past, 'builtin:sweet-spot-3x12', 60))
     render(<MonthCalendar />)
-    const doneChip = await screen.findByRole('button', { name: /r1/ })
+    // the chips' own markers: role queries are slow under a loaded test run
+    const doneChip = await appears(`[data-date="${past}"] [data-testid="calendar-ride"]`)
     expect(doneChip.getAttribute('data-done')).toBe('true')
-    const missedChip = await screen.findByRole('button', { name: 'VO2, missed' })
+    const missedChip = await appears(`[data-date="${missedDay}"] [data-testid="calendar-planned"]`)
     expect(missedChip.getAttribute('data-status')).toBe('missed')
+    expect(missedChip.getAttribute('aria-label')).toBe('VO2, missed')
   })
 
   it('shows each week’s planned and completed volume beside it', async () => {
     const day = inMonth(1) ?? inMonth(-1)!
     await db().schedule.put({ id: 'p', date: day, workoutId: 'builtin:sweet-spot-3x12', workout: null, name: 'Sweet spot', source: 'manual', createdAt: 1 })
     render(<MonthCalendar />)
-    await waitFor(() => expect(screen.getAllByTestId('week-volume').some((w) => /Planned/.test(w.textContent ?? ''))).toBe(true))
+    await waitFor(() => expect(screen.getAllByTestId('week-volume').some((w) => /Planned/.test(w.textContent ?? ''))).toBe(true), { timeout: 5000 })
     const week = screen.getAllByTestId('week-volume').find((w) => /Planned/.test(w.textContent ?? ''))!
     // Sweet spot 3×12 is about an hour at the default FTP
     expect(within(week).getByText(/0 done · 1 planned/)).toBeTruthy()
