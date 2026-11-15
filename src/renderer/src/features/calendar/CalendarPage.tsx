@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react'
-import { FileUp } from 'lucide-react'
+import { CalendarPlus, FileUp } from 'lucide-react'
 import { describeImport, importFitFiles } from '../../db/fit-import'
 import { Button } from '../../ui/Button'
 import { PageHeader } from '../../ui/PageHeader'
@@ -8,6 +8,9 @@ import { ActivitySync } from './ActivitySync'
 import { IntervalsImport } from './IntervalsImport'
 import { MonthCalendar } from './MonthCalendar'
 import { DayDialog } from './DayDialog'
+import { importWorkoutFiles, SESSION_IMPORT_EXTENSIONS, type ImportLine } from '../../workouts/session-import'
+import { FormatGuideLink } from '../sessions/FormatGuide'
+import { ImportReport } from '../sessions/ImportReport'
 import type { CalendarDay } from './calendar'
 
 /** The training calendar: what is planned, what was done, and the volume of both. */
@@ -17,6 +20,20 @@ export function CalendarPage() {
   const [dragging, setDragging] = useState(false)
   const [day, setDay] = useState<CalendarDay | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const sessionInput = useRef<HTMLInputElement>(null)
+  const [report, setReport] = useState<ImportLine[] | null>(null)
+
+  /** Session and workout files: each goes on the day its name or "date:" line gives. */
+  const importSessions = async (list: FileList | File[]) => {
+    const files = await Promise.all(Array.from(list).filter((f) => SESSION_IMPORT_EXTENSIONS.some((x) => f.name.toLowerCase().endsWith(x))).map(async (f) => ({ name: f.name, text: await f.text() })))
+    if (files.length === 0) return
+    try {
+      setNotice(null)
+      setReport(await importWorkoutFiles(files, 'calendar'))
+    } catch (e) {
+      setNotice({ tone: 'bad', text: `Couldn't import: ${e instanceof Error ? e.message : String(e)}` })
+    }
+  }
 
   /** FIT files from a Garmin or other watch: rides go to History, runs, swims and strength sessions onto the calendar. */
   const importFiles = async (list: FileList | File[]) => {
@@ -34,7 +51,9 @@ export function CalendarPage() {
   const onDrop = (e: DragEvent) => {
     e.preventDefault()
     setDragging(false)
+    // .fit files are activities you did; .txt and the bike formats are sessions to plan
     void importFiles(e.dataTransfer.files)
+    void importSessions(e.dataTransfer.files)
   }
 
   return (
@@ -59,6 +78,22 @@ export function CalendarPage() {
             <Button size="sm" disabled={!!busy} onClick={() => input.current?.click()} title="Runs, swims and strength sessions from your Garmin as .fit files (or drop them here)" data-testid="import-activities">
               <FileUp className="size-3.5" /> {busy ?? 'Import activities'}
             </Button>
+            <input
+              ref={sessionInput}
+              type="file"
+              accept={SESSION_IMPORT_EXTENSIONS.join(',')}
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) void importSessions(e.target.files)
+                e.target.value = ''
+              }}
+              data-testid="sessions-file"
+            />
+            <Button size="sm" onClick={() => sessionInput.current?.click()} title="Planned runs, swims and other sessions as .txt files named YYYY-MM-DD_Name.txt (bike workouts too). See the Format guide." data-testid="import-sessions">
+              <CalendarPlus className="size-3.5" /> Import sessions
+            </Button>
+            <FormatGuideLink />
           </>
         }
       />
@@ -67,6 +102,7 @@ export function CalendarPage() {
           {notice.text}
         </div>
       )}
+      {report && <ImportReport lines={report} onDismiss={() => setReport(null)} />}
       <MonthCalendar onDay={setDay} />
       {day && <DayDialog day={day} onClose={() => setDay(null)} />}
     </div>

@@ -44,3 +44,24 @@ describe('parseDistanceField', () => {
     expect(distanceFieldUnit('run', 'metric')).toBe('km')
   })
 })
+
+describe('paces', () => {
+  it('reads and writes minutes:seconds', async () => {
+    const { formatPace, parsePaceField } = await import('./session-input')
+    expect(parsePaceField('4:15')).toBe(255)
+    expect(parsePaceField(' 1:40 ')).toBe(100)
+    expect(parsePaceField('4:75')).toBeNull()
+    expect(parsePaceField('fast')).toBeNull()
+    expect(formatPace(255)).toBe('4:15')
+    expect(formatPace(99.6)).toBe('1:40')
+  })
+
+  it('shows run pace per mile and swim pace per 100 yd in imperial, stored per km and per 100 m', async () => {
+    const { runPaceShown, runPaceStored, swimPaceShown, swimPaceStored } = await import('./session-input')
+    expect(Math.round(runPaceShown(255, 'imperial'))).toBe(410)
+    expect(runPaceStored(410, 'imperial')).toBe(255)
+    expect(runPaceShown(255, 'metric')).toBe(255)
+    expect(Math.round(swimPaceShown(100, 'imperial'))).toBe(91)
+    expect(swimPaceStored(91.44, 'imperial')).toBe(100)
+  })
+})

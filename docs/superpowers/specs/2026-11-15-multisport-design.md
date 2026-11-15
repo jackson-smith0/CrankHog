@@ -239,7 +239,7 @@ After every import, a report lists **every file** with one line saying where it 
 - `line 9: a repeat inside a repeat isn't supported. Write the inner set out.`
 - `line 4: one target per step. "Z2 HR 4:30/km Pace" has two.`
 - `No steps, and no duration or distance: add "duration: 45m" or some steps.`
-- `distance 175mtr isn't a whole number of 25m lengths.` (warning)
+- `distance 160mtr isn't a whole number of 25m lengths.` (warning)
 - `This is a run with distance steps, and no threshold run pace is set: it shows its distance but no time. Set it in Settings, Athlete.` (warning)
 
 A file with errors is skipped as a whole, never half-imported. A file with only warnings is imported, and the warnings stay visible on the report.

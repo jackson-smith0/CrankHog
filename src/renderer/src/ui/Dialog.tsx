@@ -27,7 +27,7 @@ export function Dialog({
         <D.Content
           className={cn(
             'fixed left-1/2 top-1/2 z-50 w-[min(560px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2',
-            'rounded-2xl border border-line-strong bg-panel p-6 shadow-2xl focus:outline-none',
+            'max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-line-strong bg-panel p-6 shadow-2xl focus:outline-none',
             className,
           )}
         >

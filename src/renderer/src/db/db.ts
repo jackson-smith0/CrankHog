@@ -50,6 +50,10 @@ export interface ProfileEntry {
   restHr?: number
   cpW?: number
   wPrimeJ?: number
+  /** Threshold run pace, seconds per km: for the time and load of run sessions. */
+  runThresholdPaceSPerKm?: number
+  /** Critical swim speed as a pace, seconds per 100 m: for swim sessions. */
+  swimCssSPer100m?: number
   heightCm?: number
   birthYear?: number
 }

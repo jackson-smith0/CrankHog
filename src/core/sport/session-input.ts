@@ -53,3 +53,24 @@ export function distanceFieldUnit(sport: SportGroup, units: UnitSystem): 'km' | 
 }
 
 const positive = (v: number): number | null => (Number.isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null)
+
+/** "4:15" → 255 seconds; "1:40" → 100. Null when it isn't minutes:seconds. */
+export function parsePaceField(text: string): number | null {
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(text.trim())
+  if (!m) return null
+  return positive(Number(m[1]) * 60 + Number(m[2]))
+}
+
+/** 255 → "4:15". */
+export function formatPace(seconds: number): string {
+  const s = Math.round(seconds)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** A threshold run pace as shown: per km, or per mile in imperial. Stored per km. */
+export const runPaceShown = (sPerKm: number, units: UnitSystem): number => (units === 'imperial' ? sPerKm * (M_PER_MI / 1000) : sPerKm)
+export const runPaceStored = (shown: number, units: UnitSystem): number => Math.round(units === 'imperial' ? shown / (M_PER_MI / 1000) : shown)
+
+/** A swim pace as shown: per 100 m, or per 100 yd in imperial. Stored per 100 m. */
+export const swimPaceShown = (sPer100m: number, units: UnitSystem): number => (units === 'imperial' ? sPer100m * M_PER_YD : sPer100m)
+export const swimPaceStored = (shown: number, units: UnitSystem): number => Math.round(units === 'imperial' ? shown / M_PER_YD : shown)

@@ -2,12 +2,14 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ImagePlus, Trash2 } from 'lucide-react'
+import { formatPace, parsePaceField, runPaceShown, runPaceStored, swimPaceShown, swimPaceStored } from '@core/sport/session-input'
 import { displayWeightKg, formatWeight, storedWeightKg, weightUnit } from '@core/units'
 import { currentProfile, deleteFtp, recordFtp, updateProfile } from '../../db/athlete-repo'
 import { db } from '../../db/db'
 import { MAX_NAME, photoFromFile, riderInitials, saveRider, useRider } from '../../db/rider'
 import { patchSettings, useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
+import { cn } from '../../ui/cn'
 import { Field, Input, NumberInput, Section } from '../../ui/form'
 import { THIS_DEVICE } from '../../platform/where'
 import { Segmented } from '../../ui/Segmented'
@@ -110,7 +112,74 @@ export function AthleteSection() {
           <DraftNumber value={profile?.restHr ?? null} onCommit={(v) => void updateProfile({ restHr: v ?? undefined })} unit="bpm" min={30} max={100} aria-label="Resting HR" />
         </Field>
       </Section>
+
+      <RunSwimSection runSPerKm={profile?.runThresholdPaceSPerKm ?? null} swimSPer100m={profile?.swimCssSPer100m ?? null} />
     </>
+  )
+}
+
+/**
+ * Threshold paces for run and swim sessions: they turn distance steps into
+ * time and score the load on the calendar (docs/WORKOUT-FORMAT.md).
+ */
+function RunSwimSection({ runSPerKm, swimSPer100m }: { runSPerKm: number | null; swimSPer100m: number | null }) {
+  const units = useSettings((s) => s.units)
+  return (
+    <Section title="Run & swim" description="Used to work out the time and load of planned run and swim sessions on the calendar. Leave them empty and distance-only sessions show their distance, but no time or load.">
+      <Field label="Threshold run pace" hint="The pace you could hold for about an hour: a hard 30-minute run's average pace is a good estimate.">
+        <PaceInput
+          value={runSPerKm !== null ? runPaceShown(runSPerKm, units) : null}
+          onCommit={(v) => void updateProfile({ runThresholdPaceSPerKm: v === null ? undefined : runPaceStored(v, units) })}
+          unit={units === 'imperial' ? '/mi' : '/km'}
+          aria-label="Threshold run pace"
+          min={150}
+          max={units === 'imperial' ? 1200 : 750}
+        />
+      </Field>
+      <Field label="Swim threshold pace (CSS)" hint="From a 400 and a 200 time trial: (400 time − 200 time) ÷ 2, per 100.">
+        <PaceInput
+          value={swimSPer100m !== null ? swimPaceShown(swimSPer100m, units) : null}
+          onCommit={(v) => void updateProfile({ swimCssSPer100m: v === null ? undefined : swimPaceStored(v, units) })}
+          unit={units === 'imperial' ? '/100yd' : '/100m'}
+          aria-label="Swim threshold pace"
+          min={50}
+          max={300}
+        />
+      </Field>
+    </Section>
+  )
+}
+
+/** A pace typed as minutes:seconds, saved when it reads right. Empty clears it. */
+function PaceInput({ value, onCommit, unit, min, max, ...rest }: { value: number | null; onCommit: (s: number | null) => void; unit: string; min: number; max: number; 'aria-label': string }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [bad, setBad] = useState(false)
+  const shown = draft ?? (value !== null ? formatPace(value) : '')
+  const commit = () => {
+    if (draft === null) return
+    if (!draft.trim()) {
+      if (value !== null) onCommit(null)
+      setDraft(null)
+      setBad(false)
+      return
+    }
+    const s = parsePaceField(draft)
+    if (s === null || s < min || s > max) {
+      setBad(true)
+      return
+    }
+    if (s !== value) onCommit(s)
+    setDraft(null)
+    setBad(false)
+  }
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <Input {...rest} value={shown} placeholder="m:ss" onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} className={cn('max-w-28 font-display tabular', bad && 'border-bad')} />
+        <span className="text-sm text-ink-dim">{unit}</span>
+      </div>
+      {bad && <p className="mt-1 text-xs text-bad">Write it as minutes:seconds, like 4:15.</p>}
+    </div>
   )
 }
 

@@ -94,5 +94,5 @@ export function useCalendarData(from: number, to: number, today: DateKey) {
     return new Map(projectPmc(history, planned, { today, from: fromKey, to: toKey }).map((r) => [r.date, r]))
   }, [history, ahead, library, ftpW, today, fromKey, toKey])
 
-  return { rides, schedule, activities, marks, stats, volumeInput, planNames, previews, fitness, loaded: rides !== undefined && schedule !== undefined }
+  return { rides, schedule, activities, marks, stats, volumeInput, planNames, previews, fitness, loaded: rides !== undefined && schedule !== undefined && activities !== undefined }
 }

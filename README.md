@@ -161,8 +161,9 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **The Calendar** (its own page in the sidebar). The whole month: today highlighted, past days greyed, done workouts green and missed ones red.
   - **Moving and planning:** drag a planned workout to another day, plan any workout on a day with **Add to calendar**, or bring in what's planned on your intervals.icu calendar.
   - **Events and days off:** click a day's number to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
-  - **Other sports:** runs, swims and strength sessions from your Garmin's FIT files show up too, with their hrTSS (a load from heart rate, on the same scale as ride TSS) and Garmin's Training Effect.
-  - **Beside each week:** planned against done time, load and sessions, with fitness, fatigue and form at the week's end, projected from your plan for the weeks ahead.
+  - **Other sports:** runs, swims, squash and strength sessions show up too: from your Garmin's FIT files, from intervals.icu, or logged by hand. Each has a load on the same scale as ride TSS (hrTSS from heart rate, intervals.icu's load, or how hard you say it was).
+  - **Planning any sport:** click a day's number to plan a run, a swim or a squash game, or import planned sessions as text files named `YYYY-MM-DD_Name.txt`. The format is in [docs/WORKOUT-FORMAT.md](docs/WORKOUT-FORMAT.md) and the in-app **Format guide**. A planned session turns green when an activity of its sport lands on its day.
+  - **Beside each week:** planned against done time, load and sessions, split into Ride, Run, Swim and Other, with fitness, fatigue and form at the week's end, projected from your plan for the weeks ahead. Fitness counts every sport; the power curve and FTP stay rides only.
 - **Ride detail:** power, cadence, HR, speed and W′ balance charts, laps, time in zones, RPE and notes, and an AI debrief.
 - **Fitness:** the PMC (fitness, fatigue, form), weekly load, the power curve against your 90-day best, and FTP history.
 - **Fitness overview.** A plain-English read of those numbers: where your fitness is, the six-week trend, and whether your FTP needs a test. With AI on, your coach writes it, and **Ask the coach** takes it straight into the chat for questions.

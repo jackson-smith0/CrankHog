@@ -65,7 +65,7 @@ describe('MonthCalendar', () => {
     await db().rides.put(ride('r1', past, 'builtin:sweet-spot-3x12', 60))
     render(<MonthCalendar />)
     // the chips' own markers: role queries are slow under a loaded test run
-    const doneChip = await appears(`[data-date="${past}"] [data-testid="calendar-ride"]`)
+    const doneChip = await appears(`[data-date="${past}"] [data-testid="calendar-ride"][data-done="true"]`)
     expect(doneChip.getAttribute('data-done')).toBe('true')
     const missedChip = await appears(`[data-date="${missedDay}"] [data-testid="calendar-planned"]`)
     expect(missedChip.getAttribute('data-status')).toBe('missed')
@@ -91,13 +91,18 @@ describe('MonthCalendar', () => {
       { id: 'sq', startedAt: dayMs(day, 20), sport: 'racket', subSport: 'squash', name: 'Evening squash', movingS: 3600, distanceM: null, avgHr: 160, maxHr: 185, hrLoad: 70, trainingEffect: null, garminLoad: null, device: null, fileName: 'squash.fit' },
     ])
     render(<MonthCalendar />)
-    await waitFor(() => expect(screen.getAllByTestId('sport-volume').length).toBeGreaterThan(1), { timeout: 5000 })
-    const rows = [...screen.getAllByTestId('week-volume').find((w) => w.querySelector('[data-sport="run"]'))!.querySelectorAll('[data-sport]')]
-    expect(rows.map((r) => r.getAttribute('data-sport'))).toEqual(['ride', 'run', 'other'])
-    expect(rows[1]!.textContent).toMatch(/Run40m/)
-    expect(rows[1]!.textContent).toMatch(/km|mi/)
-    expect(rows[2]!.textContent).toMatch(/Other1h 00m/)
-    expect(rows[0]!.textContent).toMatch(/Ride0m \/ 1h/)
+    // the planned ride's length comes once the library has loaded
+    await waitFor(
+      () => {
+        const rows = [...(screen.getAllByTestId('week-volume').find((w) => w.querySelector('[data-sport="run"]'))?.querySelectorAll('[data-sport]') ?? [])]
+        expect(rows.map((r) => r.getAttribute('data-sport'))).toEqual(['ride', 'run', 'other'])
+        expect(rows[0]!.textContent).toMatch(/Ride0m \/ 1h/)
+        expect(rows[1]!.textContent).toMatch(/Run40m/)
+        expect(rows[1]!.textContent).toMatch(/km|mi/)
+        expect(rows[2]!.textContent).toMatch(/Other1h 00m/)
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('shows fitness and form at each week’s end, projected after today', async () => {
