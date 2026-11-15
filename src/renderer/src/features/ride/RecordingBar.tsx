@@ -64,7 +64,7 @@ export function RecordingBar({ plan, startLabel = 'Start recording' }: { plan?: 
             Mute
           </Button>
         )}
-        <Button size="sm" onClick={() => rt.rides.command({ type: 'lap' })} title="Lap (L)">
+        <Button size="sm" disabled={waiting} onClick={() => rt.rides.command({ type: 'lap' })} title="Lap (L)">
           <Flag className="size-3.5" /> Lap
         </Button>
         <Button

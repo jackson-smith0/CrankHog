@@ -2,7 +2,7 @@
 // then the FIT file goes to the export folder (main) and, if enabled, into
 // the Strava / intervals.icu upload outbox. The journal is deleted only once
 // all of that has succeeded, so a crash at any step is recoverable.
-import { finalizeRide, type FinalizeInput } from '@core/ride/finalize'
+import { MIN_RIDE_S, finalizeRide, type FinalizeInput } from '@core/ride/finalize'
 import { parseJournal } from '@core/ride/journal'
 import type { RideSummary } from '@core/ride/types'
 import { MIN_UPLOAD_S, uploadSkipReason, type UploadSkip } from '@core/ride/upload-policy'
@@ -102,7 +102,8 @@ export async function pendingRecoveries(): Promise<PendingRecovery[]> {
       await bridge().invoke('journal.remove', { rideId: j.rideId })
       continue
     }
-    if (j.records > 0) out.push(j)
+    // the rule finishing a ride uses: a few seconds is a press of Start, not a ride
+    if (j.records >= MIN_RIDE_S) out.push(j)
     else await bridge().invoke('journal.remove', { rideId: j.rideId })
   }
   return out
@@ -112,7 +113,7 @@ export async function pendingRecoveries(): Promise<PendingRecovery[]> {
 export async function recoverRide(rideId: string): Promise<SaveResult | null> {
   const { text } = await bridge().invoke('journal.read', { rideId })
   const j = parseJournal(text)
-  if (!j.meta || j.records.length === 0) return null
+  if (!j.meta || j.records.length < MIN_RIDE_S) return null
   return saveFinishedRide({
     rideId,
     name: j.meta.name,

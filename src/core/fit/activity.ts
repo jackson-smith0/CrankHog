@@ -6,7 +6,7 @@
 //   lap* → event(timer stop) → session → activity
 // sport=cycling + sub_sport=virtual_activity makes Strava file it as a
 // VirtualRide. Missing values are simply omitted (FIT "invalid").
-// Rides recorded here arrive contiguous (finalize trims pauses first), so the
+// Rides recorded here arrive contiguous (finalize closes pauses first), so the
 // timer stop/start pairs are only written for records that still have gaps.
 import { FitWriter, type FitDevInfo } from '@markw65/fit-file-writer'
 import type { RideRecord } from '../ride/recorder'
