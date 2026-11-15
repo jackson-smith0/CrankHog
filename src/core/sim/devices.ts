@@ -73,6 +73,8 @@ export class SimFtmsTrainer extends VirtualPeripheral {
   readonly spinDownWindow = { lowKmh: 30, highKmh: 35 }
   /** Where a spin down is: speeding up to the window, or coasting down through it. */
   private spinDown: { phase: 'speedUp' } | { phase: 'coast'; since: number } | null = null
+  /** The trainer has asked for a spin down, and no one has started or ignored it. */
+  spinDownRequested = false
   /** Decoded command log for tests: RequestControl → Start → SetTargetPower... */
   readonly commandLog: { t: number; op: string; detail?: unknown }[] = []
 
@@ -95,6 +97,26 @@ export class SimFtmsTrainer extends VirtualPeripheral {
 
   releaseControl(): void {
     this.lockedByOtherApp = false
+  }
+
+  /** The trainer asks for a spin down (after a firmware update, or once warm). */
+  requestSpinDown(): void {
+    this.spinDownRequested = true
+    this.notify(SERVICE.fitnessMachine, CHAR.fitnessMachineStatus, encodeFtmsStatus({ kind: 'spinDown', status: 'requested' }))
+  }
+
+  /** The trainer resets itself (a power blip, or its own button). */
+  resetByTrainer(): void {
+    this.hasControl = false
+    this.started = false
+    this.mode = 'none'
+    this.spinDown = null
+    this.notify(SERVICE.fitnessMachine, CHAR.fitnessMachineStatus, encodeFtmsStatus({ kind: 'reset' }))
+  }
+
+  /** True while a spin down runs: targets are refused until it finishes or is stopped. */
+  get spinningDown(): boolean {
+    return this.spinDown !== null
   }
 
   /** 1 Hz: Indoor Bike Data (+ CPS measurement for realism: KICKRs expose both). */
@@ -213,28 +235,40 @@ export class SimFtmsTrainer extends VirtualPeripheral {
     }
     if (!this.hasControl) return reply(FtmsResult.ControlNotPermitted)
 
+    // measuring the flywheel: no load is applied until the spin down ends
+    const busy = () => this.spinDown !== null
     switch (cmd.op) {
       case 'reset':
         this.hasControl = false
         this.started = false
         this.mode = 'none'
-        return reply(FtmsResult.Success)
+        this.spinDown = null
+        reply(FtmsResult.Success)
+        queueMicrotask(() => this.notify(SERVICE.fitnessMachine, CHAR.fitnessMachineStatus, encodeFtmsStatus({ kind: 'reset' })))
+        return
       case 'start':
         this.started = true
         return reply(FtmsResult.Success)
       case 'stop':
+        // ends the session, and a spin down running in it
+        this.started = false
+        this.spinDown = null
+        return reply(FtmsResult.Success)
       case 'pause':
         this.started = false
         return reply(FtmsResult.Success)
       case 'targetPower':
+        if (busy()) return reply(FtmsResult.OperationFailed)
         this.mode = 'erg'
         this.targetW = Math.max(0, Math.min(2000, cmd.watts))
         return reply(FtmsResult.Success)
       case 'targetResistance':
+        if (busy()) return reply(FtmsResult.OperationFailed)
         this.mode = 'resistance'
         this.resistanceLevel = Math.max(0, Math.min(100, cmd.level))
         return reply(FtmsResult.Success)
       case 'simulation':
+        if (busy()) return reply(FtmsResult.OperationFailed)
         this.mode = 'sim'
         this.gradePct = cmd.gradePct
         this.crr = cmd.crr
@@ -245,10 +279,9 @@ export class SimFtmsTrainer extends VirtualPeripheral {
         return reply(FtmsResult.Success)
       case 'spinDown': {
         if (!this.spinDownSupported) return reply(FtmsResult.NotSupported)
-        if (!cmd.start) {
-          this.spinDown = null
-          return reply(FtmsResult.Success)
-        }
+        // Ignore declines a spin down the trainer asked for; it never stops one that runs
+        this.spinDownRequested = false
+        if (!cmd.start) return reply(FtmsResult.Success)
         // the trainer lets go of any load while the flywheel is measured
         this.mode = 'none'
         this.spinDown = { phase: 'speedUp' }

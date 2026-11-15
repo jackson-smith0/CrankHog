@@ -8,6 +8,8 @@
 //     indication [0x80, requestOp, result, ...] which we match with a timeout
 //   * "Control Not Permitted" (result 5) or Status 0xFF means another client
 //     took over; we re-request control once and retry, then report.
+//   * a spin down the app gives up on is ended with Stop; Start goes out
+//     again before the next target.
 import {
   FtmsResult,
   IndoorBikeDataAssembler,
@@ -21,11 +23,10 @@ import {
   parseSupportedResistanceRange,
   type FtmsCommand,
   type FtmsFeatures,
-  type SpinDownStatus,
 } from '../../ble/codecs'
 import { toHex, type GattSession } from '../../ble/transport'
 import { CHAR, SERVICE } from '../../ble/uuids'
-import type { DriverContext, SpinDownCapable, SpinDownStart, TrainerDriver } from '../driver'
+import type { DriverContext, SpinDownCapable, SpinDownStart, SpinDownUpdate, TrainerDriver } from '../driver'
 import type { CommandResult, Range, TrainerCaps, TrainerCommand } from '../types'
 
 const CP_TIMEOUT_MS = 3000
@@ -57,7 +58,9 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
   private resistanceEncoding: 'uint8' | 'sint16' = 'sint16'
   private readonly assembler = new IndoorBikeDataAssembler()
   private readonly controlLostListeners = new Set<() => void>()
-  private readonly spinDownListeners = new Set<(status: SpinDownStatus) => void>()
+  private readonly spinDownListeners = new Set<(update: SpinDownUpdate) => void>()
+  /** Bumped by stopSpinDown, so a Start still waiting for control is not sent after the Stop. */
+  private spinDownRun = 0
   private attached = false
 
   constructor(private features: FtmsFeatures | null = null) {
@@ -137,7 +140,7 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
       if (!this.hasControl) {
         const c = await this.ensureControl()
         if (c !== FtmsResult.Success) return mapResult(c)
-      }
+      } else await this.ensureStarted()
       let result = await this.write(ftms)
       if (result === FtmsResult.ControlNotPermitted) {
         this.hasControl = false
@@ -160,16 +163,21 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
     if (!this.session || !this.attached) return { result: 'disconnected', targets: null }
     if (!this.caps.spinDown) return { result: 'unsupported', targets: null }
     const cmd: FtmsCommand = { op: 'spinDown', start: true }
+    const run = this.spinDownRun
+    // stopped while waiting for control: the Stop is already queued, so Start must not follow it
+    const stopped: SpinDownStart = { result: 'rejected', targets: null }
     try {
       if (!this.hasControl) {
         const c = await this.ensureControl()
         if (c !== FtmsResult.Success) return { result: mapResult(c), targets: null }
+        if (run !== this.spinDownRun) return stopped
       }
       let answer = await this.procedure(cmd)
       if (answer.result === FtmsResult.ControlNotPermitted) {
         this.hasControl = false
         const c = await this.ensureControl()
         if (c !== FtmsResult.Success) return { result: mapResult(c), targets: null }
+        if (run !== this.spinDownRun) return stopped
         answer = await this.procedure(cmd)
       }
       const result = mapResult(answer.result)
@@ -179,7 +187,30 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
     }
   }
 
-  onSpinDownStatus(listener: (status: SpinDownStatus) => void): () => void {
+  /**
+   * Ends a spin down early with Stop (FTMS v1.0 §4.16.2.9), which ends the
+   * trainer's session and the spin down in it. Start goes out again before
+   * the next target. A trainer without Stop is sent Reset instead, which also
+   * hands back control; the next command takes it again. Queued behind
+   * anything already sent, so it also ends a Start still waiting for its answer.
+   */
+  async stopSpinDown(): Promise<CommandResult> {
+    if (!this.session || !this.attached) return 'disconnected'
+    this.spinDownRun++
+    // before the write, so a target queued behind it sends Start first
+    this.started = false
+    try {
+      const r = await this.write({ op: 'stop' })
+      if (r !== FtmsResult.NotSupported) return mapResult(r)
+      const reset = await this.write({ op: 'reset' })
+      if (reset === FtmsResult.Success) this.hasControl = false
+      return mapResult(reset)
+    } catch {
+      return this.session ? 'timeout' : 'disconnected'
+    }
+  }
+
+  onSpinDownStatus(listener: (update: SpinDownUpdate) => void): () => void {
     this.spinDownListeners.add(listener)
     return () => this.spinDownListeners.delete(listener)
   }
@@ -217,12 +248,16 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
     }
     this.hasControl = true
     this.controlLostReported = false
-    if (!this.started) {
-      const s = await this.write({ op: 'start' })
-      // Some trainers answer "not supported" to Start; they're still controllable.
-      if (s === FtmsResult.Success || s === FtmsResult.NotSupported) this.started = true
-    }
+    await this.ensureStarted()
     return r
+  }
+
+  /** Start, once per control, and again after a Stop. */
+  private async ensureStarted(): Promise<void> {
+    if (this.started) return
+    const s = await this.write({ op: 'start' })
+    // Some trainers answer "not supported" to Start; they're still controllable.
+    if (s === FtmsResult.Success || s === FtmsResult.NotSupported) this.started = true
   }
 
   private reportControlLost(): void {
@@ -282,12 +317,18 @@ export class FtmsTrainerDriver implements TrainerDriver, SpinDownCapable {
     }
     if (status.kind === 'controlPermissionLost') {
       this.reportControlLost()
+      this.spinDownUpdate('controlLost')
     } else if (status.kind === 'reset') {
       this.hasControl = false
       this.started = false
+      this.spinDownUpdate('reset')
     } else if (status.kind === 'spinDown') {
-      for (const l of this.spinDownListeners) l(status.status)
+      this.spinDownUpdate(status.status)
     }
+  }
+
+  private spinDownUpdate(update: SpinDownUpdate): void {
+    for (const l of this.spinDownListeners) l(update)
   }
 
   private onBikeData(dv: DataView): void {

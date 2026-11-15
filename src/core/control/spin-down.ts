@@ -14,9 +14,11 @@
 //
 // This class only follows that procedure and keeps time; the trainer does
 // the measuring. Run it with no ride on, so nothing else writes to the
-// trainer in the middle.
-import type { SpinDownStatus, SpinDownTargets } from '../ble/codecs'
-import type { SpinDownCapable, SpinDownStart } from '../devices/driver'
+// trainer in the middle. When the app gives up first (the rider cancels, or
+// a step takes too long) it tells the trainer to stop, or the trainer could
+// stay in its spin down and ignore the next ride's targets.
+import type { SpinDownTargets } from '../ble/codecs'
+import type { SpinDownCapable, SpinDownStart, SpinDownUpdate } from '../devices/driver'
 import type { Cancel, Clock } from '../time/clock'
 
 export type { SpinDownStart }
@@ -35,7 +37,14 @@ export type SpinDownFailure =
   | 'trainer-error'
   /** The speed was never reached, or the coast never finished. */
   | 'timeout'
+  /** Another app took control of the trainer partway through. */
+  | 'control-lost'
+  /** The trainer reset itself partway through. */
+  | 'trainer-reset'
+  /** The trainer dropped off, or is not connected (still reconnecting). */
   | 'disconnected'
+  /** A ride is recording, and holds the trainer. */
+  | 'busy'
 
 export type SpinDownState =
   | { phase: 'idle' }
@@ -51,6 +60,8 @@ export interface SpinDownOptions {
   speedUpTimeoutMs?: number
   /** How long the coast may take. */
   coastTimeoutMs?: number
+  /** True while something else holds the trainer (a ride): start() fails with "busy". */
+  busy?: () => boolean
 }
 
 const START_FAILURE: Record<Exclude<SpinDownStart['result'], 'ok'>, SpinDownFailure> = {
@@ -70,6 +81,7 @@ export class SpinDown {
   private run = 0
   private readonly speedUpTimeoutMs: number
   private readonly coastTimeoutMs: number
+  private readonly busy: () => boolean
 
   constructor(
     private readonly trainer: SpinDownTrainer,
@@ -78,10 +90,17 @@ export class SpinDown {
   ) {
     this.speedUpTimeoutMs = opts.speedUpTimeoutMs ?? 90_000
     this.coastTimeoutMs = opts.coastTimeoutMs ?? 60_000
+    this.busy = opts.busy ?? (() => false)
   }
 
   get state(): SpinDownState {
     return this.current
+  }
+
+  /** From start() until the trainer reports the result or the calibration ends otherwise. */
+  get running(): boolean {
+    const p = this.current.phase
+    return p === 'starting' || p === 'speedUp' || p === 'coast'
   }
 
   /** Calls `listener` with the current state now, and with every change. */
@@ -94,31 +113,36 @@ export class SpinDown {
   async start(): Promise<void> {
     this.release()
     const run = ++this.run
+    if (this.busy()) return this.fail('busy')
     this.set({ phase: 'starting' })
     // listen before asking, so a status that follows the answer closely is not lost
-    this.offStatus = this.trainer.onSpinDownStatus((s) => run === this.run && this.onStatus(s))
+    this.offStatus = this.trainer.onSpinDownStatus((u) => run === this.run && this.onUpdate(u))
     const reply = await this.trainer.startSpinDown()
     if (run !== this.run || this.current.phase !== 'starting') return
+    // no answer in time: the trainer may have started one anyway
+    if (reply.result === 'timeout') return this.abandon('no-answer')
     if (reply.result !== 'ok') return this.fail(START_FAILURE[reply.result])
     this.set({ phase: 'speedUp', targets: reply.targets })
     this.arm(this.speedUpTimeoutMs)
   }
 
-  /** The trainer dropped off. */
+  /** The trainer dropped off, or another one replaced it. */
   lost(): void {
-    if (this.active()) this.fail('disconnected')
+    if (this.running) this.fail('disconnected')
   }
 
-  /** The rider closed the calibration. */
+  /** The rider closed the calibration. A trainer still running it is told to stop. */
   cancel(): void {
+    const running = this.running
     this.run++
     this.release()
+    if (running) this.stopTrainer()
     this.set({ phase: 'idle' })
   }
 
-  private onStatus(status: SpinDownStatus): void {
-    if (!this.active()) return
-    switch (status) {
+  private onUpdate(update: SpinDownUpdate): void {
+    if (!this.running) return
+    switch (update) {
       case 'stopPedaling':
         if (this.current.phase === 'coast') return
         this.set({ phase: 'coast' })
@@ -134,22 +158,36 @@ export class SpinDown {
       case 'requested':
         // the trainer asking for a spin down while one is running: nothing to do
         return
+      // either ends the spin down on the trainer, and it is no longer ours to stop
+      case 'controlLost':
+        this.fail('control-lost')
+        return
+      case 'reset':
+        this.fail('trainer-reset')
+        return
     }
-  }
-
-  private active(): boolean {
-    const p = this.current.phase
-    return p === 'starting' || p === 'speedUp' || p === 'coast'
   }
 
   private arm(ms: number): void {
     this.timer?.()
-    this.timer = this.clock.after(ms, () => this.fail('timeout'))
+    this.timer = this.clock.after(ms, () => this.abandon('timeout'))
   }
 
   private fail(reason: SpinDownFailure): void {
     this.release()
     this.set({ phase: 'failed', reason })
+  }
+
+  /** Fails a spin down the trainer may still be running, and tells it to stop. */
+  private abandon(reason: SpinDownFailure): void {
+    this.release()
+    // queued before anyone hears of the failure, so whatever they send next follows it
+    this.stopTrainer()
+    this.set({ phase: 'failed', reason })
+  }
+
+  private stopTrainer(): void {
+    void this.trainer.stopSpinDown().catch(() => undefined)
   }
 
   private release(): void {

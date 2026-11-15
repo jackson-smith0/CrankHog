@@ -76,7 +76,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
   - A "spiral of death" guard: once you're riding, resistance is released if your cadence collapses below 45 rpm, and comes back once you hold 55. A standing start never trips it.
   - One command per second with deadbands, and targets sent a second early to hide trainer lag.
   - Everything is re-applied after a reconnect.
-- **Spin-down calibration.** **Calibrate** on the trainer's card in **Devices** walks you through it: speed up to the speed your trainer asks for, stop pedalling, and let it measure the coast-down. For FTMS trainers that support it. If your trainer asks for one, CrankHog tells you.
+- **Spin-down calibration.** **Calibrate trainer** on the trainer's card in **Devices** walks you through it: speed up to the speed your trainer asks for, stop pedalling, and let it measure the coast-down. For FTMS trainers that support it. If your trainer asks for one, CrankHog tells you.
 - **Journeys** (Settings → Journeys, off by default).
   - **Where to?** on the ride screen: a random famous start, a particular one, the journey you're on, a new grand journey, or any GPX you imported.
   - Distance comes from your power, weight and bike through the same physics as route rides. Real terrain slows you on the climbs; flat is watts to distance only. No power, no progress.

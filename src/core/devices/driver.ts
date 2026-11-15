@@ -47,11 +47,19 @@ export interface SpinDownStart {
   targets: SpinDownTargets | null
 }
 
+/**
+ * What a trainer says that bears on a spin down: its Spin Down Status
+ * (requested, stop pedalling, success or error), or that it reset or another
+ * app took control, either of which ends one.
+ */
+export type SpinDownUpdate = SpinDownStatus | 'reset' | 'controlLost'
+
 /** A trainer driver that can run a spin-down calibration (FTMS). */
 export interface SpinDownCapable {
   startSpinDown(): Promise<SpinDownStart>
-  /** Spin Down Status from the trainer: requested, stop pedalling, success or error. */
-  onSpinDownStatus(listener: (status: SpinDownStatus) => void): () => void
+  /** Ends a spin down the trainer has not finished, so it takes targets again. */
+  stopSpinDown(): Promise<CommandResult>
+  onSpinDownStatus(listener: (update: SpinDownUpdate) => void): () => void
 }
 
 /** True for a connected trainer whose driver and features both support spin down. */

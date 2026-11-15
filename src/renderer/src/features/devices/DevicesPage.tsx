@@ -234,7 +234,7 @@ function DeviceCard({ role, device, compact }: { role: DeviceRole; device?: Mana
           )}
           {calibratable && (
             <Button size="sm" variant="secondary" onClick={() => setCalibrating(true)} data-testid="calibrate-trainer">
-              <RotateCw className="size-3.5" /> Calibrate
+              <RotateCw className="size-3.5" /> Calibrate trainer
             </Button>
           )}
           {remembered && (

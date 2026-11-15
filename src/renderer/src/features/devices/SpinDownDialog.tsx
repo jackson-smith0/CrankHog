@@ -7,14 +7,18 @@ import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 
-const FAILURE: Record<SpinDownFailure, string> = {
-  unsupported: 'This trainer has no spin-down calibration. Many direct-drive trainers calibrate themselves.',
-  'not-permitted': 'Another app (Zwift, the Wahoo app or a head unit) has control of the trainer. Close it, then try again.',
-  rejected: 'The trainer refused to start a spin-down. Stop pedalling, wait for the flywheel to stop, then try again.',
-  'no-answer': 'The trainer did not answer. Check that it is still connected, then try again.',
-  'trainer-error': 'The trainer could not measure the coast-down. Once it asks you to stop pedalling, keep your legs still until it finishes.',
-  timeout: 'The trainer never finished. Speed up a little past the target, then stop pedalling completely.',
-  disconnected: 'The trainer disconnected. Wait for it to reconnect, then try again.',
+/** What happened, and what to do next. */
+const FAILURE: Record<SpinDownFailure, { heading: string; text: string }> = {
+  unsupported: { heading: 'No spin-down on this trainer', text: "This trainer doesn't offer one. Many direct-drive trainers calibrate themselves." },
+  'not-permitted': { heading: 'Another app has the trainer', text: 'Zwift, the Wahoo app or a head unit has control of it. Close that app, then try again.' },
+  rejected: { heading: 'The trainer refused', text: "It wouldn't start a spin-down. Stop pedalling, wait for the flywheel to stop, then try again." },
+  'no-answer': { heading: "The trainer didn't answer", text: "Check that it's still connected, then try again." },
+  'trainer-error': { heading: 'The coast-down failed', text: "The trainer couldn't measure it. Once it asks you to stop pedalling, keep your legs still until it finishes." },
+  timeout: { heading: 'The trainer never finished', text: 'Speed up a little past the target, then stop pedalling completely.' },
+  'control-lost': { heading: 'Another app took the trainer', text: 'Zwift, the Wahoo app or a head unit took control partway through, which stopped the calibration. Close that app, then try again.' },
+  'trainer-reset': { heading: 'The trainer reset', text: 'It reset itself partway through, which stopped the calibration. Wait a few seconds, then try again.' },
+  disconnected: { heading: "The trainer isn't connected", text: 'Wait for it to reconnect, then try again.' },
+  busy: { heading: 'A ride is recording', text: "Finish your ride first. The trainer can't be calibrated while a ride holds it." },
 }
 
 /**
@@ -22,13 +26,20 @@ const FAILURE: Record<SpinDownFailure, string> = {
  * window, stop pedalling and let the flywheel coast, then the result.
  * `create` gives a fresh calibration for the connected trainer.
  */
-export function SpinDownDialog({ open, onOpenChange, create }: { open: boolean; onOpenChange: (open: boolean) => void; create: () => SpinDown | null }) {
+export function SpinDownDialog({
+  open,
+  onOpenChange,
+  create,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  create: () => SpinDown | SpinDownFailure
+}) {
   const [state, setState] = useState<SpinDownState>({ phase: 'idle' })
   const run = useRef<{ sd: SpinDown; off: () => void } | null>(null)
-  const riding = useRide((s) => s.active)
-  // the free-ride screen drives the trainer without recording
-  const driven = useLive((f) => f.trainer.mode !== 'idle')
-  const busy = riding || driven
+  const busy = useRide((s) => s.active)
+  // a free-ride target still held with nothing recording, which starting lets go
+  const holding = useLive((f) => f.trainer.mode !== 'idle') && !busy
 
   const stop = () => {
     run.current?.off()
@@ -41,7 +52,7 @@ export function SpinDownDialog({ open, onOpenChange, create }: { open: boolean; 
   const start = async () => {
     stop()
     const sd = create()
-    if (!sd) return setState({ phase: 'failed', reason: 'unsupported' })
+    if (typeof sd === 'string') return setState({ phase: 'failed', reason: sd })
     run.current = { sd, off: sd.subscribe(setState) }
     await sd.start()
   }
@@ -65,7 +76,7 @@ export function SpinDownDialog({ open, onOpenChange, create }: { open: boolean; 
           </Button>
           {state.phase === 'idle' && (
             <Button variant="primary" onClick={() => void start()} disabled={busy}>
-              Start
+              Start calibration
             </Button>
           )}
           {state.phase === 'failed' && state.reason !== 'unsupported' && (
@@ -77,20 +88,21 @@ export function SpinDownDialog({ open, onOpenChange, create }: { open: boolean; 
       }
     >
       <div className="min-h-40" data-testid="spin-down">
-        <Step state={state} busy={busy} />
+        <Step state={state} busy={busy} holding={holding} />
       </div>
     </Dialog>
   )
 }
 
-function Step({ state, busy }: { state: SpinDownState; busy: boolean }) {
+function Step({ state, busy, holding }: { state: SpinDownState; busy: boolean; holding: boolean }) {
   switch (state.phase) {
     case 'idle':
       return (
         <div className="space-y-2 text-sm">
-          <p>Warm up for 10 minutes first: a cold trainer reads differently. Then press Start, speed up to the speed it asks for, and stop pedalling when it says so.</p>
+          <p>Warm up for 10 minutes first: a cold trainer reads differently. Then start the calibration, speed up to the speed it asks for, and stop pedalling when it says so.</p>
           <p className="text-ink-dim">Wheel-on trainers need this after every change of tyre pressure.</p>
-          {busy && <p className="text-bad">Finish your ride first. The trainer can't be calibrated while it is holding a target.</p>}
+          {busy && <p className="text-bad">{FAILURE.busy.text}</p>}
+          {holding && <p className="text-ink-dim">The trainer is still holding your free-ride target. Starting the calibration lets it go.</p>}
         </div>
       )
     case 'starting':
@@ -114,8 +126,8 @@ function Step({ state, busy }: { state: SpinDownState; busy: boolean }) {
     case 'failed':
       return (
         <div className="space-y-2">
-          <Heading>That didn’t work</Heading>
-          <p className="text-sm text-ink-dim">{FAILURE[state.reason]}</p>
+          <Heading>{FAILURE[state.reason].heading}</Heading>
+          <p className="text-sm text-ink-dim">{FAILURE[state.reason].text}</p>
         </div>
       )
   }
