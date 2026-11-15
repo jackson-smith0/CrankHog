@@ -88,6 +88,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
   - Change the intensity in 1 % steps.
   - Ride any workout in Level or Slope mode instead of ERG.
   - Text cues appear as the workout reaches them, and every interval becomes a lap.
+  - Countdown beeps 3, 2 and 1 seconds before each interval ends, and a longer one as the next begins. They keep going when the coach is muted (**Settings → Coach**).
 - **Interval rescue.** When a hard interval is failing, it offers 5 % easier or a 30-second breather instead of letting you bail.
 - **FTP tests.**
   - **20-minute** (Allen & Coggan). During the effort ERG turns off: the trainer puts you on a 3 % climb (↑/↓ changes it) and a pacing band and projected FTP guide you.

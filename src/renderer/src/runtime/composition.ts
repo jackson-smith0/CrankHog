@@ -23,6 +23,8 @@ import { bridge } from '../platform/bridge'
 import { devicesStore, pushCapture, pushNotice } from '../stores/devices'
 import { liveStore } from '../stores/live'
 import { patchSettings, settingsStore } from '../stores/settings'
+import { playBeep, primeBeeps } from '../audio/beeps'
+import { BeepRuntime } from './beeps'
 import { RideRunner } from './ride-runner'
 
 export type AppInfo = InvokeRes<'app.info'>
@@ -38,6 +40,8 @@ export interface Runtime {
   rides: RideRunner
   /** The live coach: lines on screen and spoken during rides. */
   coach: CoachRuntime
+  /** Interval countdown beeps. */
+  beeps: BeepRuntime
   sim: SimWorld | null
   /** A spin-down calibration for the connected trainer, or why there can't be one. It won't start while a ride is recording. */
   spinDown(): SpinDown | SpinDownFailure
@@ -130,6 +134,11 @@ export function initRuntime(info: AppInfo): Runtime {
   // The coach follows every ride. Automated test runs never make the Mac talk.
   const coach = createCoachRuntime({ rides, engine, clock, hub, controller }, { speak: !info.isTest })
   coach.start()
+  // Countdown beeps follow every workout and FTP test, whatever the coach is doing.
+  // Test runs stay silent and make no audio context.
+  const beeps = new BeepRuntime({ rides, engine, clock, settings: () => settingsStore.getState(), play: info.isTest ? () => undefined : playBeep })
+  beeps.start()
+  if (!info.isTest) primeBeeps(() => settingsStore.getState().beeps.enabled)
   engine.start()
   void rides.loadRecoveries()
 
@@ -174,6 +183,7 @@ export function initRuntime(info: AppInfo): Runtime {
     engine,
     rides,
     coach,
+    beeps,
     sim,
     spinDown: () => calibrator.create(),
     connect,
