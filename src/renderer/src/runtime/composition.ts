@@ -38,6 +38,8 @@ export interface Runtime {
   rides: RideRunner
   /** The live coach: lines on screen and spoken during rides. */
   coach: CoachRuntime
+  /** Interval countdown beeps. */
+  beeps: BeepRuntime
   sim: SimWorld | null
   connect(role: DeviceRole): Promise<void>
   disconnect(role: DeviceRole): void
@@ -115,9 +117,11 @@ export function initRuntime(info: AppInfo): Runtime {
   // The coach follows every ride. Automated test runs never make the Mac talk.
   const coach = createCoachRuntime({ rides, engine, clock, hub, controller }, { speak: !info.isTest })
   coach.start()
-  // Countdown beeps follow every ride too, whatever the coach is doing. Test runs stay silent.
-  new BeepRuntime({ rides, engine, settings: () => settingsStore.getState(), play: info.isTest ? () => undefined : playBeep }).start()
-  primeBeeps()
+  // Countdown beeps follow every workout and FTP test, whatever the coach is doing.
+  // Test runs stay silent and make no audio context.
+  const beeps = new BeepRuntime({ rides, engine, clock, settings: () => settingsStore.getState(), play: info.isTest ? () => undefined : playBeep })
+  beeps.start()
+  if (!info.isTest) primeBeeps(() => settingsStore.getState().beeps.enabled)
   engine.start()
   void rides.loadRecoveries()
 
@@ -162,6 +166,7 @@ export function initRuntime(info: AppInfo): Runtime {
     engine,
     rides,
     coach,
+    beeps,
     sim,
     connect,
     disconnect: (role) => devices.disconnect(role),

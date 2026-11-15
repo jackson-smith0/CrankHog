@@ -3,13 +3,13 @@ import { Check, Pencil, Plus, Volume2 } from 'lucide-react'
 import { MAX_CUSTOM_COACHES, customCoachMeta, isCustomCoachId, previewLine, type CustomCoach } from '@core/coach'
 import { PROFESSIONAL, type CoachLine, type CoachTrigger, type PersonaMeta } from '@core/persona'
 import type { BeepPrefs, CoachPrefs, FuelingPrefs } from '@shared/settings'
-import { playBeep } from '../../audio/beeps'
 import { listVoices, onVoicesChanged, resolveVoice, speak } from '../../audio/tts'
 import { PersonaAvatar } from '../../coach/PersonaAvatar'
 import { aiReady } from '../../coach/quips'
 import { watchdogMs } from '../../coach/speech-queue'
 import { CoachToon } from '../../coach/toon/CoachToon'
 import { toonFor } from '../../coach/toon/heads'
+import { getRuntime } from '../../runtime/composition'
 import { patchSettings, useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
@@ -105,8 +105,6 @@ export function CoachSection() {
   const setFuel = (patch: Partial<FuelingPrefs>) => void patchSettings({ fueling: { ...fuel, ...patch } })
   const beeps = useSettings((s) => s.beeps)
   const setBeeps = (patch: Partial<BeepPrefs>) => void patchSettings({ beeps: { ...beeps, ...patch } })
-  // the countdown as it sounds in a ride: three ticks a second apart, then the go
-  const testBeeps = () => (['tick', 'tick', 'tick', 'go'] as const).forEach((b, i) => setTimeout(() => playBeep(b, beeps.volume), i * 1000))
 
   const [voices, setVoices] = useState(() => listVoices())
   useEffect(() => onVoicesChanged(() => setVoices(listVoices())), [])
@@ -277,7 +275,7 @@ export function CoachSection() {
             <div className="min-w-0 flex-1">
               <Slider ariaLabel="Beep volume" value={beeps.volume} min={0.05} max={1} step={0.05} format={(v) => `${Math.round(v * 100)} %`} onChange={(v) => setBeeps({ volume: v })} />
             </div>
-            <Button size="sm" onClick={testBeeps} disabled={!beeps.enabled} data-testid="beeps-test">
+            <Button size="sm" onClick={() => getRuntime().beeps.preview()} disabled={!beeps.enabled} aria-label="Test beeps" data-testid="beeps-test">
               <Volume2 className="size-3.5" /> Test
             </Button>
           </div>

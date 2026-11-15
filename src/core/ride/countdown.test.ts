@@ -50,6 +50,15 @@ describe('IntervalCountdown', () => {
     expect(cd.tick(at(0, 60, 1.75))).toEqual(['tick'])
   })
 
+  it('does not sound the go for a step that starts while paused, nor on resume', () => {
+    const cd = new IntervalCountdown()
+    ride(cd, 0, 60)
+    // skipped to the next step during the pause
+    expect(cd.tick(at(1, 60, 60, { riding: false }))).toEqual([])
+    expect(cd.tick(at(1, 60, 60))).toEqual([])
+    expect(cd.tick(at(1, 60, 59.75))).toEqual([])
+  })
+
   it('counts down again when an interval is extended after its countdown began', () => {
     const cd = new IntervalCountdown()
     expect(cd.tick(at(0, 60, 2.5))).toEqual(['tick'])
