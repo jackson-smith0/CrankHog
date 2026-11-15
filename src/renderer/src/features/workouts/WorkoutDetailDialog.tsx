@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { AlertTriangle, Bike, CalendarPlus, Copy, Download, FolderInput, PencilLine, Star, Trash2 } from 'lucide-react'
+import { AlertTriangle, Bike, CalendarPlus, Copy, Download, PencilLine, Star, Trash2 } from 'lucide-react'
 import { WorkoutChart } from '../../charts/WorkoutChart'
 import { dateKey, dateKeyToMs, isDateKey } from '@core/workout/schedule'
 import { scheduleWorkout } from '../../plan/schedule-repo'
+import { addToPlan, createPlan, listPlans } from '../../plan/plans-repo'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useDevices } from '../../stores/devices'
 import { useRide } from '../../stores/ride'
 import { Button } from '../../ui/Button'
@@ -11,7 +13,7 @@ import { Dialog } from '../../ui/Dialog'
 import { Input } from '../../ui/form'
 import { formatDuration } from '../../ui/format'
 import { POWER_ZONE_LABELS, zoneVar } from '../../ui/zones'
-import { copyOf, deleteWorkout, moveToFolder, EXPORT_FORMATS, exportToZwift, exportWorkout, saveWorkout, setFavorite, tagLabel, type ExportFormat, type LibraryEntry } from '../../workouts/library'
+import { copyOf, deleteWorkout, EXPORT_FORMATS, exportToZwift, exportWorkout, saveWorkout, setFavorite, tagLabel, type ExportFormat, type LibraryEntry } from '../../workouts/library'
 import { profileBlocks } from '../../workouts/profile'
 import { startWorkout } from './start'
 
@@ -132,15 +134,15 @@ export function WorkoutDetailDialog({
             {entry.builtin ? <Copy className="size-4" /> : <PencilLine className="size-4" />}
             {entry.builtin ? 'Copy to builder' : 'Edit'}
           </Button>
-          {!entry.builtin && (
-            <Button
-              disabled={busy}
-              onClick={() => void run(async () => moveToFolder(w.id, entry.folder === 'plan' ? 'custom' : 'plan').then(() => onNotice({ tone: 'good', text: entry.folder === 'plan' ? `Moved ${w.name} to Custom workouts.` : `Added ${w.name} to your training plan.` })))}
-              data-testid="move-folder"
-            >
-              <FolderInput className="size-4" /> {entry.folder === 'plan' ? 'Move to Custom workouts' : 'Add to training plan'}
-            </Button>
-          )}
+          <AddToPlan
+            disabled={busy}
+            onPick={(planId) =>
+              void run(async () => {
+                const plan = planId ? await addToPlan(planId, w.id) : await createPlan({ name: 'Training plan' }).then((p) => addToPlan(p.id, w.id))
+                onNotice({ tone: 'good', text: `Added ${w.name} to ${plan.name}.` })
+              })
+            }
+          />
           <div className="flex items-center">
             <select
               value={format}
@@ -232,5 +234,28 @@ export function WorkoutDetailDialog({
         )}
       </div>
     </Dialog>
+  )
+}
+
+/** Adds the workout at the end of one of the rider's plans (or a new "Training plan"). */
+function AddToPlan({ disabled, onPick }: { disabled: boolean; onPick: (planId: string | null) => void }) {
+  const plans = useLiveQuery(() => listPlans(), []) ?? []
+  return (
+    <select
+      value=""
+      disabled={disabled}
+      onChange={(e) => e.target.value && onPick(e.target.value === 'new' ? null : e.target.value)}
+      aria-label="Add to a plan"
+      className="no-drag h-10 rounded-lg border border-line bg-panel-2 px-3 text-sm font-semibold text-ink hover:border-line-strong"
+      data-testid="add-to-plan"
+    >
+      <option value="">Add to plan…</option>
+      {plans.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+      <option value="new">New plan: Training plan</option>
+    </select>
   )
 }

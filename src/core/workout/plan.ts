@@ -5,6 +5,8 @@
 import { addDays, dateKeyToMs, isDateKey, type DateKey } from './schedule'
 
 export interface PlanItem {
+  /** Stable within the plan, so its calendar entry can be found again after a reorder. */
+  id: string
   workoutId: string
   /** A fixed day, from a date-prefixed file name. Otherwise the plan's ride days decide. */
   date?: DateKey
@@ -58,7 +60,7 @@ export interface DayMark {
 export const isBlocking = (m: Pick<DayMark, 'kind'>): boolean => m.kind !== 'event'
 
 export interface LayoutInput {
-  items: readonly PlanItem[]
+  items: readonly Pick<PlanItem, 'workoutId' | 'date'>[]
   rideDays: readonly number[]
   startDate: DateKey
   today: DateKey

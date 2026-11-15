@@ -5,7 +5,7 @@ import { createBackup, restoreBackup } from './backup'
 import { CrankHogDb, db, type OtherActivity } from './db'
 import type { DayMark, TrainingPlan } from '@core/workout/plan'
 
-const plan: TrainingPlan = { id: 'p1', name: 'Base 1', items: [{ workoutId: 'w' }], rideDays: [1, 3], startDate: '2026-11-16', onCalendar: false, source: 'manual', createdAt: 1, updatedAt: 1 }
+const plan: TrainingPlan = { id: 'p1', name: 'Base 1', items: [{ id: 'i1', workoutId: 'w' }], rideDays: [1, 3], startDate: '2026-11-16', onCalendar: false, source: 'manual', createdAt: 1, updatedAt: 1 }
 const run: OtherActivity = { id: 'a1', startedAt: 1, sport: 'running', subSport: null, name: 'Morning run', movingS: 1800, distanceM: 5000, avgHr: 150, maxHr: 170, hrLoad: 40, trainingEffect: { aerobic: 3, anaerobic: 1 }, garminLoad: 80, device: null, fileName: 'run.fit' }
 const mark: DayMark = { id: 'd1', date: '2026-12-06', kind: 'event', name: 'Gran fondo', priority: 'A' }
 
