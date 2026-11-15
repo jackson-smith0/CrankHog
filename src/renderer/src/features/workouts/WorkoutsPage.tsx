@@ -129,7 +129,11 @@ export function WorkoutsPage() {
       const r = await importIntoPlan(plan.id, await Promise.all(files.map(async (f) => ({ name: f.name, text: await f.text() }))))
       if (!existing && r.added === 0) await deletePlan(plan.id)
       else setPlanId(plan.id)
-      setNotice(planImportNotice(plan.name, r))
+      // sessions and skipped files get the full report, with reasons by line
+      if (r.lines.some((l) => l.kind === 'session' || l.outcome === 'skipped')) {
+        setNotice(null)
+        setReport(r.lines)
+      } else setNotice(planImportNotice(plan.name, r))
     } catch (e) {
       setNotice({ tone: 'bad', text: `Couldn't import: ${e instanceof Error ? e.message : String(e)}` })
     }

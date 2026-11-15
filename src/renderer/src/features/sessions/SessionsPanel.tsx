@@ -2,7 +2,7 @@
 // with its steps and what it adds up to, ready to plan on a day.
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useState } from 'react'
-import { CalendarPlus, ClipboardPaste, Copy, Trash2 } from 'lucide-react'
+import { CalendarPlus, ClipboardPaste, Copy, ListPlus, Trash2 } from 'lucide-react'
 import { describeSession, sessionFromFile } from '@core/multisport/build'
 import type { SessionThresholds } from '@core/multisport/estimate'
 import type { SessionWorkout } from '@core/multisport/model'
@@ -12,10 +12,11 @@ import { dateKey, isDateKey } from '@core/workout/schedule'
 import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
-import { Field, Input } from '../../ui/form'
+import { Field, Input, Select } from '../../ui/form'
 import { formatDurationShort } from '../../ui/format'
 import { deleteSessionWorkout, listSessionWorkouts, planSessionWorkout, saveSessionWorkout, sessionThresholds } from '../../workouts/sessions-repo'
 import { SportIcon } from '../calendar/SportIcon'
+import { addSessionToPlan, listPlans } from '../../plan/plans-repo'
 import { FormatGuideLink } from './FormatGuide'
 import { SessionSteps } from './SessionSteps'
 
@@ -166,7 +167,16 @@ function SessionDialog({ workout: w, thresholds, onClose, onNotice }: { workout:
   const units = useSettings((s) => s.units)
   const [date, setDate] = useState(() => dateKey(Date.now()))
   const [confirming, setConfirming] = useState(false)
+  const plans = useLiveQuery(() => listPlans(), [])
+  const [planId, setPlanId] = useState('')
   const { parsed, estimate } = useMemo(() => describeSession(w, thresholds), [w, thresholds])
+  const addToPlan = async () => {
+    const plan = plans?.find((p) => p.id === (planId || plans[0]?.id))
+    if (!plan) return
+    await addSessionToPlan(plan.id, w)
+    onNotice({ tone: 'good', text: `${w.name} is in ${plan.name}.` })
+    onClose()
+  }
   const plan = async () => {
     if (!isDateKey(date)) return
     await planSessionWorkout(date, w)
@@ -220,6 +230,22 @@ function SessionDialog({ workout: w, thresholds, onClose, onNotice }: { workout:
             </Button>
           </div>
         </Field>
+        {plans && plans.length > 0 && (
+          <Field label="Add to a plan" hint="It takes the plan's next day, like a workout.">
+            <div className="flex gap-2">
+              <Select value={planId || plans[0]!.id} onChange={(e) => setPlanId(e.target.value)} aria-label="Plan" className="max-w-56">
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+              <Button onClick={() => void addToPlan()} data-testid="session-add-to-plan">
+                <ListPlus className="size-3.5" /> Add
+              </Button>
+            </div>
+          </Field>
+        )}
       </div>
     </Dialog>
   )

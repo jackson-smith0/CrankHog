@@ -6,13 +6,19 @@
 //
 // A workout of the rider's own in a plan is filed there (folder 'plan' and the
 // plan's id), for the library's "In a plan" badge and the builder's Folder.
-import { isBlocking, layOutPlan, nextMonday, parseDatedFileName, type PlanItem, type TrainingPlan } from '@core/workout/plan'
+import { isBlocking, isSessionItem, layOutPlan, nextMonday, parseDatedFileName, type PlanItem, type TrainingPlan } from '@core/workout/plan'
+import { sessionFromFile } from '@core/multisport/build'
+import type { SessionThresholds } from '@core/multisport/estimate'
+import { isSessionFile } from '@core/multisport/parse'
+import type { SessionWorkout } from '@core/multisport/model'
 import { activityGroup } from '@core/sport/group'
 import { addDays, completions, dateKey, dateKeyToMs, isBikeWorkout, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
 import type { Workout } from '@core/workout/model'
 import { currentFtp, DEFAULT_FTP_W } from '../db/athlete-repo'
 import { db } from '../db/db'
 import { BUILTINS, parseWorkoutFile, saveWorkout } from '../workouts/library'
+import { plannedFrom, saveSessionWorkout, sessionThresholds } from '../workouts/sessions-repo'
+import type { ImportLine } from '../workouts/session-import'
 
 const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${crypto.randomUUID().slice(0, 8)}`
 
@@ -58,7 +64,7 @@ export async function deletePlan(id: string): Promise<void> {
   if (!plan) return
   await relay({ ...plan, onCalendar: false })
   await db().plans.delete(id)
-  for (const workoutId of new Set(plan.items.map((i) => i.workoutId))) await refile(workoutId)
+  for (const workoutId of new Set(plan.items.filter((i) => !isSessionItem(i)).map((i) => i.workoutId))) await refile(workoutId)
 }
 
 export async function putOnCalendar(id: string): Promise<TrainingPlan> {
@@ -70,6 +76,14 @@ export async function takeOffCalendar(id: string): Promise<TrainingPlan> {
   const plan = await updatePlan(id, { onCalendar: false })
   await relay(plan)
   return plan
+}
+
+/** Adds a run, swim or other session to a plan. */
+export async function addSessionToPlan(id: string, w: Pick<SessionWorkout, 'id' | 'sport'>, date?: DateKey): Promise<TrainingPlan> {
+  const plan = await db().plans.get(id)
+  if (!plan) throw new Error('That plan no longer exists.')
+  const item: PlanItem = { id: newId('i'), workoutId: w.id, sport: w.sport, ...(date ? { date } : {}) }
+  return updatePlan(id, { items: [...plan.items, item] })
 }
 
 export async function addToPlan(id: string, workoutId: string, date?: DateKey): Promise<TrainingPlan> {
@@ -144,6 +158,8 @@ async function workoutNames(ids: readonly string[]): Promise<Map<string, string>
 /** Brings the calendar in line with the plan (see the top of this file). */
 async function relay(plan: TrainingPlan): Promise<void> {
   const d = db()
+  // read outside the transaction, which doesn't cover the profile
+  const thresholds: SessionThresholds = plan.onCalendar && plan.items.some(isSessionItem) ? await sessionThresholds() : {}
   await d.transaction('rw', [d.schedule, d.rides, d.dayMarks, d.workouts, d.activities, d.sessionWorkouts], async () => {
     const mine = (await d.schedule.toArray()).filter((e) => e.planId === plan.id)
     const workoutIds = [...new Set(mine.map((e) => e.workoutId).filter((x): x is string => !!x))]
@@ -173,22 +189,27 @@ async function relay(plan: TrainingPlan): Promise<void> {
       blocked: new Set(marks.filter(isBlocking).map((m) => m.date)),
       endDate: event?.date,
     })
-    const names = await workoutNames(plan.items.map((i) => i.workoutId))
+    const names = await workoutNames(plan.items.filter((i) => !isSessionItem(i)).map((i) => i.workoutId))
+    const sessions = new Map((await d.sessionWorkouts.bulkGet(plan.items.filter(isSessionItem).map((i) => i.workoutId))).filter((w): w is SessionWorkout => !!w).map((w) => [w.id, w]))
     const entries: ScheduledWorkout[] = layout.placements
       .map((p) => ({ p, item: plan.items[p.index]! }))
       .filter(({ item }) => !doneItems.has(item.id))
-      .map(({ p, item }) => ({
-        id: `plan-${plan.id}-${item.id}`,
-        date: p.date,
-        workoutId: item.workoutId,
-        workout: null,
-        name: names.get(item.workoutId) ?? 'Workout',
-        source: 'manual',
-        planId: plan.id,
-        planItemId: item.id,
-        // the plan's order, so a day's workouts list in it
-        createdAt: plan.createdAt + p.index,
-      }))
+      .map(({ p, item }): ScheduledWorkout => {
+        const common = {
+          id: `plan-${plan.id}-${item.id}`,
+          date: p.date,
+          source: 'manual' as const,
+          planId: plan.id,
+          planItemId: item.id,
+          // the plan's order, so a day's workouts list in it
+          createdAt: plan.createdAt + p.index,
+        }
+        if (item.sport) {
+          const w = sessions.get(item.workoutId)
+          return { ...common, workoutId: null, workout: null, sport: item.sport, name: w?.name ?? 'Session', session: w ? plannedFrom(w, thresholds) : { sessionWorkoutId: item.workoutId } }
+        }
+        return { ...common, workoutId: item.workoutId, workout: null, name: names.get(item.workoutId) ?? 'Workout' }
+      })
     await d.schedule.bulkPut(entries)
   })
 }
@@ -201,6 +222,8 @@ export async function relayAllPlans(): Promise<void> {
 export interface PlanImportResult {
   added: number
   failed: { name: string; reason: string }[]
+  /** Every file and where it went, for the import report. */
+  lines: ImportLine[]
 }
 
 /**
@@ -212,22 +235,40 @@ export async function importIntoPlan(id: string, files: readonly { name: string;
   const plan = await db().plans.get(id)
   if (!plan) throw new Error('That plan no longer exists.')
   const ftpW = (await currentFtp())?.ftpW ?? DEFAULT_FTP_W
+  const thresholds = await sessionThresholds()
   const ordered = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
   const items: PlanItem[] = []
   const failed: PlanImportResult['failed'] = []
+  const lines: ImportLine[] = []
   for (const f of ordered) {
+    // a run, swim or other session: read whole or not at all, with the report's reasons
+    if (isSessionFile(f.text)) {
+      const r = sessionFromFile(f.name, f.text, thresholds, Date.now())
+      if (!r.workout) {
+        failed.push({ name: f.name, reason: r.errors.map((e) => `${e.line ? `line ${e.line}: ` : ''}${e.text}`).join(' ') })
+        lines.push({ file: f.name, kind: 'session', name: r.parsed.name, outcome: 'skipped', errors: r.errors, warnings: r.warnings })
+        continue
+      }
+      const saved = await saveSessionWorkout(r.workout)
+      items.push({ id: newId('i'), workoutId: saved.id, sport: saved.sport, ...(r.date ? { date: r.date } : {}) })
+      lines.push({ file: f.name, kind: 'session', name: saved.name, outcome: 'plan', planName: plan.name, ...(r.date ? { date: r.date } : {}), errors: [], warnings: r.warnings })
+      continue
+    }
     try {
       const { date, rest } = parseDatedFileName(f.name)
       const ext = /\.[^.]+$/.exec(f.name)?.[0] ?? ''
-      const { workout } = parseWorkoutFile(`${rest}${ext}`, f.text)
+      const { workout, warnings } = parseWorkoutFile(`${rest}${ext}`, f.text)
       const saved = await saveWorkout({ ...workout, folder: 'plan', planId: id }, ftpW)
       items.push({ id: newId('i'), workoutId: saved.id, ...(date ? { date } : {}) })
+      lines.push({ file: f.name, kind: 'bike', name: saved.name, outcome: 'plan', planName: plan.name, ...(date ? { date } : {}), errors: [], warnings: warnings.map((text) => ({ text })) })
     } catch (e) {
-      failed.push({ name: f.name, reason: e instanceof Error ? e.message : String(e) })
+      const reason = e instanceof Error ? e.message : String(e)
+      failed.push({ name: f.name, reason })
+      lines.push({ file: f.name, kind: 'bike', outcome: 'skipped', errors: [{ text: reason }], warnings: [] })
     }
   }
   if (items.length > 0) await updatePlan(id, { items: [...plan.items, ...items], source: plan.items.length === 0 ? 'files' : plan.source })
-  return { added: items.length, failed }
+  return { added: items.length, failed, lines }
 }
 
 /**
@@ -275,5 +316,5 @@ export async function takeOutOfPlan(id: string, itemId: string): Promise<void> {
   const item = (await db().plans.get(id))?.items.find((i) => i.id === itemId)
   if (!item) return
   await removeItem(id, itemId)
-  await refile(item.workoutId)
+  if (!isSessionItem(item)) await refile(item.workoutId)
 }

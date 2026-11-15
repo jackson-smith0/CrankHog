@@ -8,7 +8,10 @@ import { addDays, dateKey, dateKeyToMs, isDateKey, type DateKey } from './schedu
 export interface PlanItem {
   /** Stable within the plan, so its calendar entry can be found again after a reorder. */
   id: string
+  /** A bike workout in the library, or, when `sport` is set, a run, swim or other session (src/core/multisport). */
   workoutId: string
+  /** Set for a session that isn't a bike workout: it takes a plan day like a ride does, and is done by an activity of its sport. */
+  sport?: 'run' | 'swim' | 'other'
   /** A fixed day, from a date-prefixed file name or the plan builder. Otherwise the plan's ride days decide. */
   date?: DateKey
   /** The rider moved it on the calendar: this day wins over the plan's. */
@@ -215,3 +218,6 @@ function isRealDay(key: string): boolean {
   const date = new Date(y, mo - 1, d)
   return date.getFullYear() === y && date.getMonth() === mo - 1 && date.getDate() === d
 }
+
+/** A run, swim or other session rather than a bike workout. */
+export const isSessionItem = (i: Pick<PlanItem, 'sport'>): boolean => i.sport !== undefined
