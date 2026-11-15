@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Bot, FileUp, Hammer, Loader2, Sparkles, Wand2 } from 'lucide-react'
-import type { DayMark, EventFocus, PlanGoal, PlanSurvey } from '@core/workout/plan'
+import { nextMonday, type DayMark, type EventFocus, type PlanGoal, type PlanSurvey } from '@core/workout/plan'
 import { planWeeks, type Phase } from '@core/workout/plan-builder'
 import { addDays, dateKey, isDateKey } from '@core/workout/schedule'
 import { aiReady } from '../../coach/quips'
 import { useFtp } from '../../db/use-athlete'
-import { addMark } from '../../plan/day-marks-repo'
+import { addMark, removeMark } from '../../plan/day-marks-repo'
 import { draftAiPlan, draftBuiltinPlan, savePlanDraft, type PlanDraft } from '../../plan/build-plan'
-import { createPlan, importIntoPlan, nextMonday } from '../../plan/plans-repo'
+import { createPlan, deletePlan, importIntoPlan } from '../../plan/plans-repo'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Dialog } from '../../ui/Dialog'
@@ -16,6 +16,7 @@ import { Field, Input, Select, Slider } from '../../ui/form'
 import { formatDurationShort } from '../../ui/format'
 import { Segmented, type SegmentedOption } from '../../ui/Segmented'
 import { describeWorkout, IMPORT_EXTENSIONS, loadLibrary, plannedStatsOf } from '../../workouts/library'
+import { planImportNotice } from './import-notice'
 
 type Step = 'event' | 'fill' | 'survey' | 'builder' | 'review'
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -42,7 +43,7 @@ const PRIORITY: SegmentedOption<NonNullable<DayMark['priority']>>[] = [
  * your own workout files, a plan built for you from a short survey (by AI,
  * or by CrankHog's own rules), or an empty plan to fill by hand.
  */
-export function NewPlanFlow({ onClose, onCreated }: { onClose: () => void; onCreated: (planId: string) => void }) {
+export function NewPlanFlow({ onClose, onCreated }: { onClose: () => void; onCreated: (planId: string, notice?: { tone: 'good' | 'bad'; text: string }) => void }) {
   const [step, setStep] = useState<Step>('event')
   const [hasEvent, setHasEvent] = useState(true)
   const [eventName, setEventName] = useState('')
@@ -91,16 +92,24 @@ export function NewPlanFlow({ onClose, onCreated }: { onClose: () => void; onCre
     setStep('fill')
   }
 
-  /** The plan without a survey: from files, or empty. */
-  const createSimple = (files?: FileList) =>
+  /**
+   * The plan without a survey: from files, or empty. Once the plan is made the
+   * dialog closes, whatever some files did, so trying again can't make a second
+   * one; when no file could be read, nothing is made.
+   */
+  const createSimple = (files?: File[]) =>
     act(async () => {
+      const read = files ? await Promise.all(files.map(async (f) => ({ name: f.name, text: await f.text() }))) : null
       const mark = event ? await addMark({ date: event.date, kind: 'event', name: event.name, priority: event.priority }) : undefined
-      const plan = await createPlan({ name: name.trim() || 'Training plan', source: files ? 'files' : 'manual', eventId: mark?.id })
-      if (files) {
-        const r = await importIntoPlan(plan.id, await Promise.all(Array.from(files).map(async (f) => ({ name: f.name, text: await f.text() }))))
-        if (r.failed.length > 0) throw new Error(`Made the plan, but couldn't import ${r.failed.map((f) => f.name).join(', ')}`)
+      const plan = await createPlan({ name: name.trim() || 'Training plan', source: read ? 'files' : 'manual', eventId: mark?.id })
+      if (!read) return onCreated(plan.id)
+      const r = await importIntoPlan(plan.id, read)
+      if (r.added === 0) {
+        await deletePlan(plan.id)
+        if (mark) await removeMark(mark.id)
+        throw new Error(`Couldn't import ${r.failed.map((f) => `${f.name}: ${f.reason}`).join('; ')}`)
       }
-      onCreated(plan.id)
+      onCreated(plan.id, r.failed.length > 0 ? planImportNotice(plan.name, r) : undefined)
     })
 
   const build = (withAi: boolean) =>
@@ -160,7 +169,19 @@ export function NewPlanFlow({ onClose, onCreated }: { onClose: () => void; onCre
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Base 1" aria-label="Plan name" data-testid="new-plan-name" />
             </Field>
             <div className="grid gap-2 sm:grid-cols-3">
-              <input ref={fileInput} type="file" multiple accept={IMPORT_EXTENSIONS.join(',')} className="hidden" onChange={(e) => e.target.files && void createSimple(e.target.files)} data-testid="new-plan-files" />
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                accept={IMPORT_EXTENSIONS.join(',')}
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  if (files.length > 0) void createSimple(files)
+                }}
+                data-testid="new-plan-files"
+              />
               <Choice icon={FileUp} title="Import your workout files" text=".zwo, .mrc, .erg or .txt. Files named YYYY-MM-DD_name go on that day." onClick={() => fileInput.current?.click()} disabled={busy} testId="new-plan-import" />
               <Choice icon={Wand2} title="Build a plan for me" text="Answer a few questions and get a week-by-week plan." onClick={() => setStep('survey')} disabled={busy} testId="new-plan-build" />
               <Choice icon={Hammer} title="Start empty" text="Pick workouts from your library." onClick={() => void createSimple()} disabled={busy} testId="new-plan-empty" />

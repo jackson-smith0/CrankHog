@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { addDays, dateKey } from '@core/workout/schedule'
 import { db } from '../db/db'
-import { addMark, nextEvent, removeMark } from './day-marks-repo'
+import { addMark, nextEvent, removeMark, updateMark } from './day-marks-repo'
 import { addToPlan, createPlan, putOnCalendar } from './plans-repo'
 
 const today = dateKey(Date.now())
@@ -28,6 +28,19 @@ describe('events and days off', () => {
     expect(await planned()).toEqual([addDays(monday, 3)])
     await removeMark(travel.id)
     expect(await planned()).toEqual([addDays(monday, 1)])
+  })
+
+  it('moves a built plan’s dated workouts off a sick day, and ends them before an event moved earlier', async () => {
+    const event = await addMark({ date: addDays(monday, 13), kind: 'event', name: 'Race', priority: 'A' })
+    const p = await createPlan({ name: 'P', rideDays: [1, 3], startDate: monday, eventId: event.id })
+    for (const [w, day] of [['a', 1], ['b', 3], ['c', 10]] as const) await addToPlan(p.id, w, addDays(monday, day))
+    await putOnCalendar(p.id)
+    // sick on b's Thursday: b goes to the next free ride day, the Tuesday after
+    await addMark({ date: addDays(monday, 3), kind: 'sick' })
+    expect(await planned()).toEqual([addDays(monday, 1), addDays(monday, 8), addDays(monday, 10)])
+    // the race moves to that Wednesday: nothing on or after it stays
+    await updateMark(event.id, { date: addDays(monday, 9) })
+    expect(await planned()).toEqual([addDays(monday, 1), addDays(monday, 8)])
   })
 
   it('an event does not block its day', async () => {

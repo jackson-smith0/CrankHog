@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { CalendarCheck, Plus } from 'lucide-react'
 import { dateKey, dateKeyToMs } from '@core/workout/schedule'
 import { db } from '../../db/db'
-import { listPlans, migrateLegacyPlanFolder } from '../../plan/plans-repo'
+import { listPlans } from '../../plan/plans-repo'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { useNow } from '../../ui/useNow'
@@ -13,14 +13,12 @@ import { PlanEditor } from './PlanEditor'
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DAY_MS = 86_400_000
 
-/** The Training plan tab: your plans, Add a training plan, and the one you're editing. */
-export function PlansPanel({ onNotice }: { onNotice: (n: { tone: 'good' | 'bad'; text: string }) => void }) {
-  useEffect(() => {
-    void migrateLegacyPlanFolder()
-  }, [])
+type Notice = { tone: 'good' | 'bad'; text: string }
+
+/** The Training plan tab: your plans, Add a training plan, and the one you're editing (`selected`, else the latest). */
+export function PlansPanel({ selected, onSelect, onNotice }: { selected: string | null; onSelect: (planId: string | null) => void; onNotice: (n: Notice) => void }) {
   const plans = useLiveQuery(() => listPlans(), [])
   const marks = useLiveQuery(() => db().dayMarks.toArray(), [])
-  const [selected, setSelected] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const now = useNow()
   const today = dateKeyToMs(dateKey(now))
@@ -39,7 +37,7 @@ export function PlansPanel({ onNotice }: { onNotice: (n: { tone: 'good' | 'bad';
             <button
               key={p.id}
               type="button"
-              onClick={() => setSelected(p.id)}
+              onClick={() => onSelect(p.id)}
               aria-current={current?.id === p.id}
               className={cn('block w-full rounded-xl border px-3 py-2.5 text-left', current?.id === p.id ? 'border-accent bg-accent/10' : 'border-line bg-panel hover:bg-panel-2')}
               data-testid="plan-card"
@@ -62,13 +60,14 @@ export function PlansPanel({ onNotice }: { onNotice: (n: { tone: 'good' | 'bad';
         })}
         {plans && plans.length === 0 && <p className="px-1 text-sm text-ink-faint">No plans yet. Add one built around an event, from your own workout files, or from scratch.</p>}
       </aside>
-      <div className="min-w-0">{current && <PlanEditor key={current.id} plan={current} onDeleted={() => setSelected(null)} onNotice={onNotice} />}</div>
+      <div className="min-w-0">{current && <PlanEditor key={current.id} plan={current} onDeleted={() => onSelect(null)} onNotice={onNotice} />}</div>
       {creating && (
         <NewPlanFlow
           onClose={() => setCreating(false)}
-          onCreated={(id) => {
+          onCreated={(id, notice) => {
             setCreating(false)
-            setSelected(id)
+            onSelect(id)
+            if (notice) onNotice(notice)
           }}
         />
       )}

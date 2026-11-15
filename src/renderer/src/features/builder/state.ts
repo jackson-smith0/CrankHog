@@ -47,7 +47,9 @@ export type EditorAction =
  * but the timestamps saveWorkout stamps on.
  */
 export function contentKey(w: Workout): string {
-  return JSON.stringify(w, (k, v: unknown) => (k === 'createdAt' || k === 'updatedAt' ? undefined : v))
+  // top-level fields in a fixed order: filing on save can add the folder and plan anywhere
+  const fields = Object.fromEntries(Object.entries(w).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+  return JSON.stringify(fields, (k, v: unknown) => (k === 'createdAt' || k === 'updatedAt' ? undefined : v))
 }
 
 /** `clean: false` opens a workout that exists nowhere yet (AI, duplicate) as unsaved. */
@@ -107,11 +109,12 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
       return history === s.history ? s : { ...s, history, rev: s.rev + 1 }
     }
     case 'saved': {
-      // saving can file the workout in a plan it makes on the spot: the draft
-      // takes that plan too, or it would differ from what was saved and look unsaved
-      if (a.workout.planId === w.planId) return { ...s, cleanKey: contentKey(a.workout) }
-      const { planId: _old, ...rest } = w
-      const workout: Workout = a.workout.planId === undefined ? rest : { ...w, planId: a.workout.planId }
+      // saving files the workout (in a plan it makes on the spot, or in another
+      // plan that still has it): the draft takes the same folder and plan, or it
+      // would differ from what was saved and look unsaved
+      if (a.workout.folder === w.folder && a.workout.planId === w.planId) return { ...s, cleanKey: contentKey(a.workout) }
+      const { folder: _f, planId: _p, ...rest } = w
+      const workout: Workout = { ...rest, ...(a.workout.folder ? { folder: a.workout.folder } : {}), ...(a.workout.planId ? { planId: a.workout.planId } : {}) }
       return { ...s, history: amend(s.history, { workout, selected }), cleanKey: contentKey(a.workout) }
     }
   }

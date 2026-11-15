@@ -13,8 +13,8 @@ import { Dialog } from '../../ui/Dialog'
 import { Select } from '../../ui/form'
 import { PageHeader } from '../../ui/PageHeader'
 import { Segmented } from '../../ui/Segmented'
-import { copyOf, EXPORT_FORMATS, exportToZwift, exportWorkout, saveWorkout, type ExportFormat } from '../../workouts/library'
-import { fileWorkoutInPlan } from '../../plan/plans-repo'
+import { copyOf, EXPORT_FORMATS, exportToZwift, exportWorkout, type ExportFormat } from '../../workouts/library'
+import { saveAndFile } from '../../plan/plans-repo'
 import { startWorkout } from '../workouts/start'
 import { AiPanel } from './AiPanel'
 import { Canvas } from './Canvas'
@@ -108,8 +108,8 @@ export function BuilderEditor({ doc, urlId, onSaved }: BuilderEditorProps) {
     }
     setBusy('save')
     try {
-      // filed in a plan: the plan gets it too (and a new plan is made if none was picked)
-      const saved = await fileWorkoutInPlan(await saveWorkout(committed, ftpW), ftpW)
+      // filed as its Folder says: the plan picked gets it (a new one if none was), the one it left loses it
+      const saved = await saveAndFile(committed, ftpW)
       dispatch({ type: 'saved', workout: saved })
       setStored(true)
       onSaved(saved.id)

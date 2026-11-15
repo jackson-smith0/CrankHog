@@ -82,6 +82,7 @@ export function PlannedWorkoutDialog({ entry, status, planName, onClose }: { ent
           </div>
         </Field>
         {entry.source === 'intervals' && <p className="text-xs text-ink-faint">From your intervals.icu calendar. The next import brings back what is planned there, so move or delete it there to keep the change.</p>}
+        {entry.planId && <p className="text-xs text-ink-faint">Moved or removed, it stays that way when the plan changes. The plan keeps it, and can put it back on its own day.</p>}
         {riding && <p className="text-xs text-ink-dim">Finish the ride in progress to start this one.</p>}
         {error && <p className="text-sm text-bad">{error}</p>}
       </div>

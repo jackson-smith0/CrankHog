@@ -2,6 +2,7 @@
 // counts as done, is in @core/workout/schedule.
 import type { DateKey, ScheduledWorkout } from '@core/workout/schedule'
 import { db } from '../db/db'
+import { movePlanWorkout, removePlanWorkout } from './plans-repo'
 
 const newId = () => `s${Date.now().toString(36)}${crypto.randomUUID().slice(0, 8)}`
 
@@ -18,11 +19,17 @@ export async function scheduleWorkout(date: DateKey, workout: { id: string; name
   return entry
 }
 
+/** Moves a scheduled workout. One from a plan on the calendar stays moved when the plan is re-laid. */
 export async function moveScheduled(id: string, date: DateKey): Promise<void> {
+  const e = await db().schedule.get(id)
+  if (e?.planId && e.planItemId && (await movePlanWorkout(e.planId, e.planItemId, date))) return
   await db().schedule.update(id, { date })
 }
 
+/** Takes a workout off the calendar. One from a plan stays in the plan, and stays off when the plan is re-laid. */
 export async function removeScheduled(id: string): Promise<void> {
+  const e = await db().schedule.get(id)
+  if (e?.planId && e.planItemId && (await removePlanWorkout(e.planId, e.planItemId))) return
   await db().schedule.delete(id)
 }
 

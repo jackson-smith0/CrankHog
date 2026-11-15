@@ -55,6 +55,26 @@ describe('NewPlanFlow', () => {
     await waitFor(() => expect(screen.getAllByTestId('new-plan-week').length).toBeGreaterThan(8), { timeout: 8000 })
   })
 
+  it('makes one plan from files even when some fail, and none when all of them do', async () => {
+    const onCreated = vi.fn()
+    render(<NewPlanFlow onClose={() => undefined} onCreated={onCreated} />)
+    fireEvent.change(screen.getByTestId('new-plan-event-name'), { target: { value: 'Gran fondo' } })
+    fireEvent.change(screen.getByTestId('new-plan-event-date'), { target: { value: addDays(dateKey(Date.now()), 70) } })
+    fireEvent.click(screen.getByTestId('new-plan-next'))
+    const bad = new File(['not xml'], 'bad.zwo')
+    const good = new File(['- 30m 65%'], 'Openers.txt')
+    // nothing readable: no plan and no event, and the dialog says why
+    await act(async () => fireEvent.change(screen.getByTestId('new-plan-files'), { target: { files: [bad] } }))
+    expect(await screen.findByText(/Couldn't import bad.zwo/)).toBeTruthy()
+    expect([await db().plans.count(), await db().dayMarks.count()]).toEqual([0, 0])
+    // one of two: the plan is made, the dialog is done with, and the failure is passed on
+    await act(async () => fireEvent.change(screen.getByTestId('new-plan-files'), { target: { files: [good, bad] } }))
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1))
+    const [plan] = await db().plans.toArray()
+    expect(onCreated).toHaveBeenCalledWith(plan!.id, expect.objectContaining({ tone: 'bad', text: expect.stringContaining('bad.zwo') }))
+    expect([await db().plans.count(), await db().dayMarks.count(), plan!.items.length]).toEqual([1, 1, 1])
+  })
+
   it('wants a name and a future date for the event', () => {
     render(<NewPlanFlow onClose={() => undefined} onCreated={() => undefined} />)
     fireEvent.click(screen.getByTestId('new-plan-next'))

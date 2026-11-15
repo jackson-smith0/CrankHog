@@ -12,7 +12,9 @@ import { formatDurationShort } from '../../ui/format'
 import { IMPORT_EXTENSIONS, loadLibrary, parseWorkoutFile, saveWorkout, tagLabel, type LibraryEntry } from '../../workouts/library'
 import { profileBlocks } from '../../workouts/profile'
 import { db } from '../../db/db'
+import { planImportNotice } from '../plan/import-notice'
 import { PlansPanel } from '../plan/PlansPanel'
+import { createPlan, deletePlan, importIntoPlan, listPlans } from '../../plan/plans-repo'
 import { WorkoutDetailDialog } from './WorkoutDetailDialog'
 
 type Filter = 'all' | 'favorites' | 'tests' | `tag:${string}`
@@ -49,6 +51,8 @@ export function WorkoutsPage() {
   const [openId, setOpenId] = useState<string | null>(search.open ?? null)
   const [notice, setNotice] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
   const [dragging, setDragging] = useState(false)
+  /** The plan open on the Training plan tab (null: the latest). */
+  const [planId, setPlanId] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const tags = useMemo(() => {
@@ -79,8 +83,7 @@ export function WorkoutsPage() {
   }, [library, tab, filter, length, query])
 
   const importFiles = async (files: FileList | File[]) => {
-    // the Training plan tab imports into a plan, from the plan's own Import button
-    if (tab === 'plan') return
+    if (tab === 'plan') return importIntoOpenPlan(Array.from(files))
     const done: string[] = []
     const failed: string[] = []
     const ordered = Array.from(files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
@@ -99,6 +102,21 @@ export function WorkoutsPage() {
         : { tone: 'good', text: done.length > 5 ? `Imported ${done.length} workouts.` : `Imported ${done.join(', ')}.` },
     )
     if (done.length > 0) pickTab('custom')
+  }
+
+  /** Files dropped on the Training plan tab go into the plan open there (a new "Training plan" when there is none), in file-name order. */
+  const importIntoOpenPlan = async (files: File[]) => {
+    try {
+      const plans = await listPlans()
+      const existing = plans.find((p) => p.id === planId) ?? plans[0]
+      const plan = existing ?? (await createPlan({ name: 'Training plan', source: 'files' }))
+      const r = await importIntoPlan(plan.id, await Promise.all(files.map(async (f) => ({ name: f.name, text: await f.text() }))))
+      if (!existing && r.added === 0) await deletePlan(plan.id)
+      else setPlanId(plan.id)
+      setNotice(planImportNotice(plan.name, r))
+    } catch (e) {
+      setNotice({ tone: 'bad', text: `Couldn't import: ${e instanceof Error ? e.message : String(e)}` })
+    }
   }
 
   const onDrop = (e: DragEvent) => {
@@ -192,7 +210,7 @@ export function WorkoutsPage() {
         ))}
       </div>
 
-      {tab === 'plan' && <PlansPanel onNotice={setNotice} />}
+      {tab === 'plan' && <PlansPanel selected={planId} onSelect={setPlanId} onNotice={setNotice} />}
 
       <div className={cn('mb-5 flex flex-wrap items-center gap-2', tab === 'plan' && 'hidden')}>
         <div className="relative mr-2 w-64">

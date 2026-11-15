@@ -8,6 +8,7 @@ import type { Journey } from '@core/journeys/progress'
 import type { ScheduledWorkout } from '@core/workout/schedule'
 import type { DayMark, TrainingPlan } from '@core/workout/plan'
 import type { StoredRoute, StoredRouteRide } from '../routes/route-codec'
+import { adoptLegacyPlanWorkouts } from './legacy-plan'
 
 export interface StoredWorkout {
   id: string
@@ -119,12 +120,17 @@ export class CrankHogDb extends Dexie {
     this.version(4).stores({
       schedule: 'id, date, source',
     })
-    // v5: named training plans, other sports from FIT files, and events and days off
-    this.version(5).stores({
-      plans: 'id, updatedAt',
-      activities: 'id, startedAt, sport',
-      dayMarks: 'id, date, kind',
-    })
+    // v5: named training plans, other sports from FIT files, and events and days off.
+    // The old Training plan folder becomes a plan, in the same transaction.
+    this.version(5)
+      .stores({
+        plans: 'id, updatedAt',
+        activities: 'id, startedAt, sport',
+        dayMarks: 'id, date, kind',
+      })
+      .upgrade(async (tx) => {
+        await adoptLegacyPlanWorkouts(tx.table('workouts'), tx.table('plans'))
+      })
   }
 }
 

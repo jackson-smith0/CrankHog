@@ -3,9 +3,12 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
 import type { RideStreams } from '@core/ride/streams'
 import { db } from './db'
+import { adoptLegacyPlanWorkouts } from './legacy-plan'
 
 export const BACKUP_FORMAT = 'crankhog-backup'
-export const BACKUP_VERSION = 1
+// 2: plans, the calendar, other sports and days off. An older app refuses a
+// newer backup rather than silently leaving those out.
+export const BACKUP_VERSION = 2
 
 type TypedKey = Exclude<keyof RideStreams, 'rideId' | 'length'>
 const TYPED: Record<TypedKey, 'f64' | 'f32' | 'u16' | 'u32'> = {
@@ -167,6 +170,8 @@ export async function restoreBackup(zip: Uint8Array): Promise<RestoreResult> {
     await d.plans.bulkPut(plans as never[])
     await d.activities.bulkPut(activities as never[])
     await d.dayMarks.bulkPut(dayMarks as never[])
+    // a 0.6.4 backup brings back the old Training plan folder
+    await adoptLegacyPlanWorkouts(d.workouts, d.plans)
   })
   return { rides: rides.length, workouts: workouts.length, ftpEntries: ftpHistory.length, routes: routes.length }
 }

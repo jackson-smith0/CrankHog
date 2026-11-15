@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addDays, dateKey } from '@core/workout/schedule'
 import { db } from '../../db/db'
-import { addToPlan, createPlan, getPlan } from '../../plan/plans-repo'
+import { addToPlan, createPlan, getPlan, updatePlan } from '../../plan/plans-repo'
 import { PlanEditor } from './PlanEditor'
 
 const today = dateKey(Date.now())
@@ -63,6 +63,21 @@ describe('PlanEditor', () => {
     await refresh()
     await waitFor(() => expect(screen.getByTestId('plan-item-date').textContent).toBe(`${short(day)} (from the file name)`))
     expect(screen.getByTestId('plan-item').textContent).toContain('Openers')
+  })
+
+  it('shows workouts moved or removed on the calendar, and puts one back', async () => {
+    const p = await createPlan({ name: 'P', rideDays: [1], startDate: monday })
+    await addToPlan(p.id, 'builtin:endurance-60')
+    await addToPlan(p.id, 'builtin:sweet-spot-3x12')
+    const [a, b] = (await getPlan(p.id))!.items
+    await updatePlan(p.id, { items: [{ ...a!, movedTo: addDays(monday, 3) }, { ...b!, removed: true }] })
+    const { refresh } = await editor(p.id)
+    await waitFor(() => expect(screen.getAllByTestId('plan-item-date').map((e) => e.textContent)).toEqual([`${short(addDays(monday, 3))} (moved on the calendar)`, 'Removed from the calendar']))
+    const putBack = await screen.findByLabelText('Put Sweet Spot 3×12 back on its day in the plan', undefined, { timeout: 4000 })
+    await act(async () => fireEvent.click(putBack))
+    await waitFor(async () => expect((await getPlan(p.id))!.items[1]!.removed).toBeUndefined())
+    await refresh()
+    await waitFor(() => expect(screen.getAllByTestId('plan-item-date')[1]!.textContent).toBe(short(addDays(monday, 8))))
   })
 
   it('says when there are no ride days to put workouts on', async () => {

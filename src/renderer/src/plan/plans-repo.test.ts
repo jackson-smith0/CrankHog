@@ -5,21 +5,23 @@ import { addDays, dateKey } from '@core/workout/schedule'
 import type { Workout } from '@core/workout/model'
 import { db } from '../db/db'
 import { saveWorkout } from '../workouts/library'
+import { addMark } from './day-marks-repo'
 import {
   addToPlan,
   createPlan,
   deletePlan,
-  fileWorkoutInPlan,
   getPlan,
   importIntoPlan,
-  migrateLegacyPlanFolder,
   moveItem,
   putOnCalendar,
   removeItem,
+  resetPlanWorkout,
+  saveAndFile,
   takeOffCalendar,
   takeOutOfPlan,
   updatePlan,
 } from './plans-repo'
+import { moveScheduled, removeScheduled } from './schedule-repo'
 
 const today = dateKey(Date.now())
 /** The next Monday after today, so ride days land at known offsets. */
@@ -152,49 +154,127 @@ describe('importIntoPlan', () => {
   })
 })
 
-describe('migrateLegacyPlanFolder', () => {
-  const mine = (id: string, name: string): Workout => ({ id, name, tags: [], sportType: 'bike', segments: [{ kind: 'steady', durationS: 600, power: { unit: 'ftp', value: 0.6 } }] as never, source: 'user', folder: 'plan' })
+describe('changes made on the calendar', () => {
+  const entryOf = async (workoutId: string) => (await db().schedule.toArray()).find((e) => e.workoutId === workoutId)!
 
-  it('turns the old Training plan folder into a plan called Training plan, in its order, once', async () => {
-    await saveWorkout(mine('w1', 'One'), 250)
-    await saveWorkout(mine('w2', 'Two'), 250)
-    await migrateLegacyPlanFolder()
-    await migrateLegacyPlanFolder()
-    const plans = await db().plans.toArray()
-    expect(plans.map((p) => [p.name, p.items.map((i) => i.workoutId), p.onCalendar])).toEqual([['Training plan', ['w1', 'w2'], false]])
+  it('keeps a workout moved on the calendar where it was put, through a day off and other edits', async () => {
+    const p = await createPlan({ name: 'P', rideDays: [1, 3], startDate: nextMonday })
+    for (const w of ['a', 'b', 'c']) await addToPlan(p.id, w)
+    await putOnCalendar(p.id)
+    // b from the first Thursday to the first Friday
+    await moveScheduled((await entryOf('b')).id, addDays(nextMonday, 4))
+    // a sick day on c's Tuesday: c moves on to Thursday, b stays where it was put
+    await addMark({ date: addDays(nextMonday, 8), kind: 'sick' })
+    await updatePlan(p.id, { name: 'Renamed' })
+    expect(await planned()).toEqual([
+      [addDays(nextMonday, 1), 'a'],
+      [addDays(nextMonday, 4), 'b'],
+      [addDays(nextMonday, 10), 'c'],
+    ])
   })
 
-  it('does nothing when there was no Training plan folder', async () => {
-    await migrateLegacyPlanFolder()
-    expect(await db().plans.count()).toBe(0)
+  it('keeps a workout removed from the calendar off it, and in the plan, until it is put back', async () => {
+    const p = await createPlan({ name: 'P', rideDays: [1, 3], startDate: nextMonday })
+    for (const w of ['a', 'b', 'c']) await addToPlan(p.id, w)
+    await putOnCalendar(p.id)
+    await removeScheduled((await entryOf('b')).id)
+    await addMark({ date: addDays(nextMonday, 14), kind: 'rest' })
+    expect(await planned()).toEqual([
+      [addDays(nextMonday, 1), 'a'],
+      [addDays(nextMonday, 8), 'c'],
+    ])
+    const item = (await getPlan(p.id))!.items[1]!
+    expect(item).toMatchObject({ workoutId: 'b', removed: true })
+    await resetPlanWorkout(p.id, item.id)
+    expect((await planned()).map(([, w]) => w)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('moves an entry of a plan no longer on the calendar like any other', async () => {
+    const p = await createPlan({ name: 'P', rideDays: [1], startDate: nextMonday })
+    await addToPlan(p.id, 'a')
+    await putOnCalendar(p.id)
+    const e = await entryOf('a')
+    await db().plans.update(p.id, { onCalendar: false })
+    await moveScheduled(e.id, addDays(nextMonday, 2))
+    expect((await db().schedule.get(e.id))!.date).toBe(addDays(nextMonday, 2))
+    expect((await getPlan(p.id))!.items[0]!.movedTo).toBeUndefined()
   })
 })
 
-describe('filing from the builder', () => {
+describe('filing', () => {
   const mine = (over: Partial<Workout> = {}): Workout => ({ id: 'w1', name: 'Mine', tags: [], sportType: 'bike', segments: [{ kind: 'steady', durationS: 600, power: { unit: 'ftp', value: 0.6 } }] as never, source: 'user', ...over })
+  const filing = async (id = 'w1') => {
+    const w = (await db().workouts.get(id))!.json
+    return [w.folder, w.planId]
+  }
 
-  it('files a workout in the plan picked, once', async () => {
+  it('files a workout saved in the builder in the plan picked, once', async () => {
     const p = await createPlan({ name: 'Base 1' })
-    const w = await saveWorkout(mine({ folder: 'plan', planId: p.id }), 250)
-    await fileWorkoutInPlan(w, 250)
-    await fileWorkoutInPlan(w, 250)
+    await saveAndFile(mine({ folder: 'plan', planId: p.id }), 250)
+    await saveAndFile(mine({ folder: 'plan', planId: p.id }), 250)
     expect((await getPlan(p.id))!.items.map((i) => i.workoutId)).toEqual(['w1'])
   })
 
   it('makes a plan called Training plan when none was picked', async () => {
-    const w = await saveWorkout(mine({ folder: 'plan' }), 250)
-    const filed = await fileWorkoutInPlan(w, 250)
+    const filed = await saveAndFile(mine({ folder: 'plan' }), 250)
     const [plan] = await db().plans.toArray()
     expect(plan!.name).toBe('Training plan')
     expect(filed.planId).toBe(plan!.id)
-    expect((await db().workouts.get('w1'))!.json.planId).toBe(plan!.id)
+    expect(await filing()).toEqual(['plan', plan!.id])
   })
 
-  it('sends a workout taken out of its only plan back to Custom workouts', async () => {
+  it('moves a workout filed in another plan in the builder out of the first one', async () => {
+    const a = await createPlan({ name: 'A' })
+    const b = await createPlan({ name: 'B' })
+    await saveAndFile(mine({ folder: 'plan', planId: a.id }), 250)
+    const saved = await saveAndFile(mine({ folder: 'plan', planId: b.id }), 250)
+    expect((await getPlan(a.id))!.items).toEqual([])
+    expect((await getPlan(b.id))!.items.map((i) => i.workoutId)).toEqual(['w1'])
+    expect(saved.planId).toBe(b.id)
+  })
+
+  it('takes a workout moved to Custom workouts in the builder out of its plan, unless another plan has it too', async () => {
+    const a = await createPlan({ name: 'A' })
+    const c = await createPlan({ name: 'C' })
+    await saveAndFile(mine({ folder: 'plan', planId: a.id }), 250)
+    const custom = await saveAndFile(mine(), 250)
+    expect((await getPlan(a.id))!.items).toEqual([])
+    expect(custom.folder).toBeUndefined()
+    // in two plans: leaving one files it in the other
+    await saveAndFile(mine({ folder: 'plan', planId: a.id }), 250)
+    await addToPlan(c.id, 'w1')
+    const left = await saveAndFile(mine(), 250)
+    expect([left.folder, left.planId]).toEqual(['plan', c.id])
+  })
+
+  it('files a workout added to a plan from the library, and refiles it when its plan is deleted', async () => {
+    await saveWorkout(mine(), 250)
+    const a = await createPlan({ name: 'A' })
+    await addToPlan(a.id, 'w1')
+    expect(await filing()).toEqual(['plan', a.id])
+    // a built-in is never filed, and adding one changes nothing in the library
+    await addToPlan(a.id, 'builtin:endurance-60')
+    await deletePlan(a.id)
+    expect(await filing()).toEqual([undefined, undefined])
+    // in two plans: deleting the one it is filed in files it in the other
+    const b = await createPlan({ name: 'B' })
+    const c = await createPlan({ name: 'C' })
+    await addToPlan(b.id, 'w1')
+    await addToPlan(c.id, 'w1')
+    expect(await filing()).toEqual(['plan', b.id])
+    await deletePlan(b.id)
+    expect(await filing()).toEqual(['plan', c.id])
+  })
+
+  it('sends a workout taken out of its only plan back to Custom workouts, and refiles one still in another', async () => {
     const p = await createPlan({ name: 'Base 1' })
-    await fileWorkoutInPlan(await saveWorkout(mine({ folder: 'plan', planId: p.id }), 250), 250)
+    const q = await createPlan({ name: 'Base 2' })
+    await saveAndFile(mine({ folder: 'plan', planId: p.id }), 250)
+    await addToPlan(q.id, 'w1')
     await takeOutOfPlan(p.id, (await getPlan(p.id))!.items[0]!.id)
-    expect((await getPlan(p.id))!.items).toEqual([])
-    expect((await db().workouts.get('w1'))!.json.folder).toBeUndefined()
+    expect(await filing()).toEqual(['plan', q.id])
+    await takeOutOfPlan(q.id, (await getPlan(q.id))!.items[0]!.id)
+    expect((await getPlan(q.id))!.items).toEqual([])
+    expect(await filing()).toEqual([undefined, undefined])
   })
 })

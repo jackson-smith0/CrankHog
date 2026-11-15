@@ -1,17 +1,18 @@
 import { useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ArrowDown, ArrowUp, CalendarCheck, CalendarX, FileUp, Plus, Search, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, CalendarCheck, CalendarX, FileUp, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
 import { isBlocking, layOutPlan, type PlanWarning, type TrainingPlan } from '@core/workout/plan'
 import { dateKey, dateKeyToMs, isDateKey } from '@core/workout/schedule'
 import { db } from '../../db/db'
 import { useFtp } from '../../db/use-athlete'
-import { addToPlan, deletePlan, importIntoPlan, moveItem, putOnCalendar, takeOffCalendar, takeOutOfPlan, updatePlan } from '../../plan/plans-repo'
+import { addToPlan, deletePlan, importIntoPlan, moveItem, putOnCalendar, resetPlanWorkout, takeOffCalendar, takeOutOfPlan, updatePlan } from '../../plan/plans-repo'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Field, Input } from '../../ui/form'
 import { formatDurationShort } from '../../ui/format'
 import { useNow } from '../../ui/useNow'
 import { IMPORT_EXTENSIONS, loadLibrary, plannedStatsOf, type LibraryEntry } from '../../workouts/library'
+import { planImportNotice } from './import-notice'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
@@ -22,6 +23,8 @@ function warningText(w: PlanWarning): string {
       return 'Pick the days you ride, so the workouts without a date can go somewhere.'
     case 'past-event':
       return `${w.count} workout${w.count === 1 ? " doesn't" : "s don't"} fit before the event. Add ride days, start earlier, or take some out.`
+    case 'days-off':
+      return `${w.count} workout${w.count === 1 ? ' falls on a day off' : 's fall on days off'} with no free ride day in the week after, so ${w.count === 1 ? 'it stays' : 'they stay'} off the calendar.`
     case 'before-today':
       return `${w.count} workout${w.count === 1 ? ' lands' : 's land'} before today and will show as missed.`
   }
@@ -79,12 +82,7 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
   const importFiles = (list: FileList) =>
     act(async () => {
       const files = await Promise.all(Array.from(list).map(async (f) => ({ name: f.name, text: await f.text() })))
-      const r = await importIntoPlan(plan.id, files)
-      onNotice(
-        r.failed.length > 0
-          ? { tone: 'bad', text: `Added ${r.added} to ${plan.name}. Couldn't import ${r.failed.map((f) => `${f.name}: ${f.reason}`).join('; ')}` }
-          : { tone: 'good', text: `Added ${r.added} workout${r.added === 1 ? '' : 's'} into ${plan.name}, in file-name order. Files named YYYY-MM-DD_… keep their day.` },
-      )
+      onNotice(planImportNotice(plan.name, await importIntoPlan(plan.id, files)))
     })
 
   return (
@@ -206,9 +204,20 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
                     <div className="truncate font-medium">{name}</div>
                     <div className="text-xs text-ink-dim tabular">
                       {entry && (entry.workout.ftpTest?.protocol === 'ramp' ? 'Ramp test, about 20 to 30 min · ' : `${formatDurationShort(entry.stats.durationS)}${entry.stats.tss !== null ? ` · TSS ${Math.round(entry.stats.tss)}` : ''} · `)}
-                      <span data-testid="plan-item-date">{date ? `${DAY.format(dateKeyToMs(date))}${item.date ? ' (from the file name)' : ''}` : 'No day yet'}</span>
+                      <span data-testid="plan-item-date">
+                        {item.removed
+                          ? 'Removed from the calendar'
+                          : date
+                            ? `${DAY.format(dateKeyToMs(date))}${item.movedTo ? ' (moved on the calendar)' : item.date && plan.source !== 'ai' && plan.source !== 'builtin' ? ' (from the file name)' : ''}`
+                            : 'No day yet'}
+                      </span>
                     </div>
                   </div>
+                  {(item.removed || item.movedTo) && (
+                    <Button size="iconSm" variant="ghost" disabled={busy} onClick={() => void act(() => resetPlanWorkout(plan.id, item.id))} aria-label={`Put ${name} back on its day in the plan`} title="Put it back on its day in the plan">
+                      <Undo2 className="size-3.5" />
+                    </Button>
+                  )}
                   <Button size="iconSm" variant="ghost" disabled={i === 0 || busy} onClick={() => void act(() => moveItem(plan.id, item.id, -1))} aria-label={`Move ${name} earlier`}>
                     <ArrowUp className="size-3.5" />
                   </Button>
