@@ -88,6 +88,9 @@ function harness(opts: { coach?: Partial<CoachPrefs>; quips?: (req: QuipRequest)
     )
     // like RideRunner: the session's own tick first, then ride-aware features
     ticks.add((now) => session.tick(now))
+    // the rider is already pedaling, so the ride begins on the press rather than waiting for a stroke
+    hub.ingest({ metric: 'power', value: 200, tMono: clock.now(), sourceId: 'test' })
+    hub.ingest({ metric: 'cadence', value: 90, tMono: clock.now(), sourceId: 'test' })
     session.start()
     for (const l of starts) l(session)
     return session

@@ -1,6 +1,7 @@
 // Owns the active RideSession inside the renderer: wiring it to the engine
 // tick, the journal (via main), keep-awake, commands and persistence.
 import { maskLanguage } from '@core/persona'
+import { MIN_RIDE_S } from '@core/ride/finalize'
 import { decideFtpUpdate, FTP_SOURCE } from '@core/ride/ftp-update'
 import { FuelingTimer } from '@core/ride/fueling'
 import type { RidePlan } from '@core/ride/plan'
@@ -194,7 +195,7 @@ export class RideRunner {
     try {
       const { records } = await session.finish()
       this.detach()
-      if (records.length < 5) {
+      if (records.length < MIN_RIDE_S) {
         dropMoments()
         await bridge().invoke('journal.remove', { rideId: session.rideId })
         rideStore.setState({ active: false, rideId: null, snapshot: null, metrics: null, saving: false, ...ENDED })

@@ -24,7 +24,8 @@ export function advanceHogRace(now: number, ftpW: number): HogRaceState {
   const dt = race.last === 0 ? 0 : (now - race.last) / 1000
   race.last = now
   const live = liveStore.getState()
-  const paused = ride.snapshot?.state === 'paused'
+  // waiting for the first pedal stroke holds still too
+  const paused = ride.snapshot?.state === 'paused' || ride.snapshot?.state === 'waiting'
   if (paused || (!ride.active && !(live.power3s ?? live.power))) return race.state
   race.state = stepHogRace(race.state, dt, { watts: live.power3s ?? live.power, kmh: live.speedKmh }, ftpW)
   return race.state

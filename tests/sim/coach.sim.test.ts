@@ -80,6 +80,8 @@ async function coachedRide(o: RideOpts) {
   session.on((e) => hear(coach.event(e, rig.clock.now())))
   rig.engine.onTick((now) => session.tick(now))
   rig.engine.onTick((now) => hear(coach.tick(probe.read(now))))
+  // already rolling when they press start, so the ride begins on the press (it waits for the first pedal stroke)
+  await rig.advance(2000, 250)
   startAt = rig.clock.now()
   session.start()
 

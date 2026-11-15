@@ -31,8 +31,9 @@ export function RideButton() {
   const state = useRide((s) => s.snapshot?.state ?? 'idle')
   const movingS = useRide((s) => s.snapshot?.movingS ?? 0)
   const reduced = useReducedMotion()
-  const paused = state === 'paused'
-  const status = !active ? 'Pick a ride' : `${paused ? 'Paused ' : ''}${formatDuration(movingS)}`
+  // waiting for the first pedal stroke reads as still, like a pause
+  const paused = state === 'paused' || state === 'waiting'
+  const status = !active ? 'Pick a ride' : state === 'waiting' ? 'Start pedaling' : `${paused ? 'Paused ' : ''}${formatDuration(movingS)}`
   return (
     <Link
       to="/ride"
