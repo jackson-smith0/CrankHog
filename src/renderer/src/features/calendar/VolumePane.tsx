@@ -1,3 +1,4 @@
+import type { ProjectedPmcRow } from '@core/metrics/pmc'
 import type { VolumeSide, VolumeTotals } from '@core/workout/volume'
 import { cn } from '../../ui/cn'
 import { formatDurationShort } from '../../ui/format'
@@ -26,8 +27,31 @@ function Row({ label, side }: { label: string; side: VolumeSide }) {
   )
 }
 
-/** One week of the volume pane: planned against completed time, load and sessions. */
-export function WeekVolume({ v, testId }: { v: VolumeTotals; testId?: string }) {
+/** Fitness (CTL), fatigue (ATL) and form (TSB) at the end of the week; dashed when projected from planned workouts. */
+function Fitness({ row }: { row: ProjectedPmcRow }) {
+  const sign = (n: number) => (Math.round(n) > 0 ? `+${Math.round(n)}` : String(Math.round(n)))
+  return (
+    <div
+      className={cn('mt-1 flex flex-wrap justify-between gap-x-2 rounded-md px-1.5 py-1 tabular', row.projected ? 'border border-dashed border-line-strong text-ink-dim' : 'bg-panel-2')}
+      title={`${row.projected ? 'Projected from your planned workouts. ' : ''}Fitness (CTL) is your 6-week load, fatigue (ATL) your last week's, and form (TSB) the difference: below -20 is a lot of fatigue, above +5 fresh.`}
+      data-testid="week-fitness"
+      data-projected={row.projected || undefined}
+    >
+      <span>
+        <span className="eyebrow text-ink-faint">Fitness</span> {Math.round(row.ctl)}
+      </span>
+      <span>
+        <span className="eyebrow text-ink-faint">Fatigue</span> {Math.round(row.atl)}
+      </span>
+      <span>
+        <span className="eyebrow text-ink-faint">Form</span> {sign(row.tsb)}
+      </span>
+    </div>
+  )
+}
+
+/** One week of the volume pane: planned against completed time, load and sessions, then fitness and form. */
+export function WeekVolume({ v, fitness, testId }: { v: VolumeTotals; fitness?: ProjectedPmcRow; testId?: string }) {
   const nothing = v.planned.sessions === 0 && v.completed.sessions === 0
   return (
     <div className="space-y-1.5 text-xs" data-testid={testId}>
@@ -46,6 +70,7 @@ export function WeekVolume({ v, testId }: { v: VolumeTotals; testId?: string }) 
           </div>
         </>
       )}
+      {fitness && <Fitness row={fitness} />}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import type { RideSummary } from '@core/ride/types'
 import { addDays, dateKey } from '@core/workout/schedule'
 import { db } from '../../db/db'
 import { MonthCalendar } from './MonthCalendar'
+import { calendarMonth } from './calendar'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => async () => undefined }))
 
@@ -77,5 +78,18 @@ describe('MonthCalendar', () => {
     // Sweet spot 3×12 is about an hour at the default FTP
     expect(within(week).getByText(/0 done · 1 planned/)).toBeTruthy()
     expect(screen.getByTestId('month-volume').textContent).toMatch(/1 workout(?!s)/)
+  })
+
+  it('shows fitness and form at each week’s end, projected after today', async () => {
+    // a ride last month, so every week of this one has fitness
+    await db().rides.put(ride('old', addDays(today, -35), 'builtin:sweet-spot-3x12', 300))
+    render(<MonthCalendar />)
+    await waitFor(() => expect(screen.getAllByTestId('week-fitness').length).toBeGreaterThan(0), { timeout: 5000 })
+    const weeks = screen.getAllByTestId('week-fitness')
+    expect(weeks.at(-1)!.textContent).toMatch(/Fitness \d+.*Form/)
+    // a week that ends after today is projected (unless today is the grid's last day)
+    const now = new Date()
+    const lastWeekEnd = calendarMonth(now.getFullYear(), now.getMonth(), { rides: [] }).weeks.at(-1)!.endKey
+    if (lastWeekEnd > today) expect(weeks.at(-1)!.getAttribute('data-projected')).toBe('true')
   })
 })

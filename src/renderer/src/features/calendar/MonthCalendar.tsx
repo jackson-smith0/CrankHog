@@ -48,8 +48,8 @@ export function MonthCalendar({ onDay }: { onDay?: (day: CalendarDay) => void })
   // the grid reaches a few days into the months either side
   const from = new Date(year, month, -7).getTime()
   const to = new Date(year, month + 1, 8).getTime()
-  const data = useCalendarData(from, to)
   const nowMs = useNow()
+  const data = useCalendarData(from, to, dateKey(nowMs))
   const m = calendarMonth(year, month, { rides: data.rides ?? [], schedule: data.schedule ?? [], activities: data.activities ?? [], marks: data.marks ?? [], now: nowMs })
   const today = dateKey(nowMs)
   const input = { ...data.volumeInput, today }
@@ -119,7 +119,7 @@ export function MonthCalendar({ onDay }: { onDay?: (day: CalendarDay) => void })
                 />
               ))}
               <div className="hidden border-b border-line bg-panel p-3 md:block" role="gridcell" aria-label={`Week of ${WEEK_OF.format(w.days[0]!.date)}`}>
-                <WeekVolume v={volumeBetween(w.startKey, w.endKey, input)} testId="week-volume" />
+                <WeekVolume v={volumeBetween(w.startKey, w.endKey, input)} fitness={data.fitness.get(w.endKey)} testId="week-volume" />
               </div>
             </div>
           ))}
@@ -131,7 +131,7 @@ export function MonthCalendar({ onDay }: { onDay?: (day: CalendarDay) => void })
         {m.weeks.map((w) => (
           <div key={w.startKey} className="px-4 py-3">
             <div className="eyebrow mb-1 text-ink-faint">Week of {WEEK_OF.format(w.days[0]!.date)}</div>
-            <WeekVolume v={volumeBetween(w.startKey, w.endKey, input)} />
+            <WeekVolume v={volumeBetween(w.startKey, w.endKey, input)} fitness={data.fitness.get(w.endKey)} />
           </div>
         ))}
       </div>

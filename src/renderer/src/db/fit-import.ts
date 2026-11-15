@@ -17,7 +17,9 @@ export interface FitImportReport {
 /** "2 rides and 1 other activity", for the import messages. */
 export function describeImport(r: Pick<FitImportReport, 'imported' | 'activities'>): string {
   const rides = `${r.imported.length} ride${r.imported.length === 1 ? '' : 's'}`
-  return r.activities.length === 0 ? rides : `${rides} and ${r.activities.length} other activit${r.activities.length === 1 ? 'y' : 'ies'}`
+  const others = `${r.activities.length} other activit${r.activities.length === 1 ? 'y' : 'ies'}`
+  if (r.activities.length === 0) return rides
+  return r.imported.length === 0 ? others : `${rides} and ${others}`
 }
 
 /** Two rides that start within this long of each other are the same ride. */

@@ -3,12 +3,13 @@
 // rider's FTP), events and days off.
 import { useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { completions, dateKey, plannedWorkoutId, type ScheduledWorkout } from '@core/workout/schedule'
+import { projectPmc, type ProjectedPmcRow } from '@core/metrics/pmc'
+import { completions, dateKey, plannedWorkoutId, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
 import type { VolumeInput } from '@core/workout/volume'
 import { db } from '../../db/db'
 import { useFtp } from '../../db/use-athlete'
 import { listScheduled } from '../../plan/schedule-repo'
-import { describeWorkout, loadLibrary } from '../../workouts/library'
+import { describeWorkout, loadLibrary, plannedStatsOf } from '../../workouts/library'
 
 export interface PlannedStats {
   durationS: number | null
@@ -20,8 +21,7 @@ export function plannedStats(schedule: readonly ScheduledWorkout[], library: Rea
   const out = new Map<string, PlannedStats>()
   for (const e of schedule) {
     if (e.workout) {
-      const { stats } = describeWorkout(e.workout, ftpW)
-      out.set(e.id, { durationS: stats.durationS, tss: stats.tss })
+      out.set(e.id, plannedStatsOf(e.workout, describeWorkout(e.workout, ftpW).stats))
     } else {
       const id = plannedWorkoutId(e)
       out.set(e.id, (id && library.get(id)) || { durationS: null, tss: null })
@@ -30,7 +30,7 @@ export function plannedStats(schedule: readonly ScheduledWorkout[], library: Rea
   return out
 }
 
-export function useCalendarData(from: number, to: number) {
+export function useCalendarData(from: number, to: number, today: DateKey) {
   const fromKey = dateKey(from)
   const toKey = dateKey(to)
   const rides = useLiveQuery(() => db().rides.where('startedAt').between(from, to).toArray(), [from, to])
@@ -38,11 +38,14 @@ export function useCalendarData(from: number, to: number) {
   const activities = useLiveQuery(() => db().activities.where('startedAt').between(from, to).toArray(), [from, to])
   const marks = useLiveQuery(() => db().dayMarks.where('date').between(fromKey, toKey, true, true).toArray(), [fromKey, toKey])
   const plans = useLiveQuery(() => db().plans.toArray(), [])
+  // fitness needs every ride before the grid, and every workout planned from today to its end
+  const history = useLiveQuery(() => db().rides.toArray().then((all) => all.filter((r) => !r.simulated).map((r) => ({ date: dateKey(r.startedAt), tss: r.tss ?? 0 }))), [])
+  const ahead = useLiveQuery(() => (toKey > today ? listScheduled(today, toKey) : Promise.resolve([])), [today, toKey])
   const { ftpW } = useFtp()
   const library = useLiveQuery(() => loadLibrary(ftpW), [ftpW])
 
   const stats = useMemo(() => {
-    const byId = new Map((library ?? []).map((e) => [e.workout.id, { durationS: e.stats.durationS, tss: e.stats.tss }]))
+    const byId = new Map((library ?? []).map((e) => [e.workout.id, plannedStatsOf(e.workout, e.stats)]))
     return plannedStats(schedule ?? [], byId, ftpW)
   }, [schedule, library, ftpW])
 
@@ -60,5 +63,13 @@ export function useCalendarData(from: number, to: number) {
 
   const planNames = useMemo(() => new Map((plans ?? []).map((p) => [p.id, p.name])), [plans])
 
-  return { rides, schedule, activities, marks, stats, volumeInput, planNames, loaded: rides !== undefined && schedule !== undefined }
+  /** Fitness, fatigue and form on each day of the grid: from rides up to today, projected from planned workouts after it. */
+  const fitness = useMemo((): Map<DateKey, ProjectedPmcRow> => {
+    if (!history || history.length === 0) return new Map()
+    const byId = new Map((library ?? []).map((e) => [e.workout.id, plannedStatsOf(e.workout, e.stats).tss]))
+    const planned = (ahead ?? []).filter((e) => e.date > today).map((e) => ({ date: e.date, tss: (e.workout ? plannedStatsOf(e.workout, describeWorkout(e.workout, ftpW).stats).tss : byId.get(plannedWorkoutId(e) ?? '')) ?? 0 }))
+    return new Map(projectPmc(history, planned, { today, from: fromKey, to: toKey }).map((r) => [r.date, r]))
+  }, [history, ahead, library, ftpW, today, fromKey, toKey])
+
+  return { rides, schedule, activities, marks, stats, volumeInput, planNames, fitness, loaded: rides !== undefined && schedule !== undefined }
 }

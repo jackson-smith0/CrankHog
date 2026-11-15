@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DecodedFit } from '@core/fit/import'
 import { db } from './db'
-import { importFitFiles } from './fit-import'
+import { describeImport, importFitFiles } from './fit-import'
 
 // The decoder is the fit-file-parser library; here each "file" decodes to what its name says.
 const T0 = new Date(2026, 10, 14, 7, 0, 0).getTime()
@@ -47,5 +47,15 @@ describe('importFitFiles: other sports', () => {
     expect(again.activities).toEqual([])
     expect(again.skipped[0]!.reason).toMatch(/Already/)
     expect(await db().activities.count()).toBe(1)
+  })
+})
+
+describe('describeImport', () => {
+  it('names what came in, leaving out what did not', () => {
+    const item = { name: 'x', rideId: 'r', id: 'a' }
+    expect(describeImport({ imported: [item, item], activities: [] })).toBe('2 rides')
+    expect(describeImport({ imported: [], activities: [item] })).toBe('1 other activity')
+    expect(describeImport({ imported: [item], activities: [item, item] })).toBe('1 ride and 2 other activities')
+    expect(describeImport({ imported: [], activities: [] })).toBe('0 rides')
   })
 })

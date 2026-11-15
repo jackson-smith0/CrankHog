@@ -32,6 +32,18 @@ export interface LibraryEntry {
 
 const cache = new Map<string, { json: string; ftpW: number; entry: Omit<LibraryEntry, 'favorite' | 'folder' | 'planOrder'> }>()
 
+/**
+ * A ramp test ends when the rider can't hold the target, so its full-length
+ * stats are fiction (every step would be about 90 minutes and hundreds of
+ * TSS). Planning totals count it as a typical test instead.
+ */
+export const RAMP_TEST_PLANNED = { durationS: 25 * 60, tss: 35 }
+
+/** Length and TSS for planning: as written, except a ramp test (see RAMP_TEST_PLANNED). */
+export function plannedStatsOf(w: Workout, stats: { durationS: number; tss: number | null }): { durationS: number; tss: number | null } {
+  return w.ftpTest?.protocol === 'ramp' ? RAMP_TEST_PLANNED : { durationS: stats.durationS, tss: stats.tss }
+}
+
 /** Compiles and scores a workout (memoized per workout content and FTP). */
 export function describeWorkout(workout: Workout, ftpW: number): Omit<LibraryEntry, 'favorite' | 'folder' | 'planOrder'> {
   const json = JSON.stringify(workout)

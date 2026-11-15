@@ -11,7 +11,7 @@ import { cn } from '../../ui/cn'
 import { Field, Input } from '../../ui/form'
 import { formatDurationShort } from '../../ui/format'
 import { useNow } from '../../ui/useNow'
-import { IMPORT_EXTENSIONS, loadLibrary, type LibraryEntry } from '../../workouts/library'
+import { IMPORT_EXTENSIONS, loadLibrary, plannedStatsOf, type LibraryEntry } from '../../workouts/library'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
@@ -58,7 +58,10 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
     [plan, marks, event, now],
   )
   const dateOf = new Map(layout.placements.map((p) => [p.index, p.date]))
-  const total = plan.items.reduce((s, i) => s + (byId.get(i.workoutId)?.stats.durationS ?? 0), 0)
+  const total = plan.items.reduce((s, i) => {
+    const e = byId.get(i.workoutId)
+    return s + (e ? plannedStatsOf(e.workout, e.stats).durationS : 0)
+  }, 0)
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -131,7 +134,7 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
         </div>
       )}
 
-      <div className="grid gap-x-6 md:grid-cols-2">
+      <div>
         <Field label="Ride days" hint="Workouts without a date of their own go on these days, in order.">
           <div className="flex flex-wrap gap-1" role="group" aria-label="Ride days">
             {WEEKDAYS.map((d, i) => (
@@ -192,7 +195,7 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
           <ol className="space-y-1.5">
             {plan.items.map((item, i) => {
               const entry = byId.get(item.workoutId)
-              const name = entry?.workout.name ?? 'Workout no longer in your library'
+              const name = entry?.workout.name ?? (library ? 'Workout no longer in your library' : '…')
               const date = dateOf.get(i)
               return (
                 <li key={item.id} className="flex items-center gap-3 rounded-xl border border-line bg-panel-2 px-3 py-2" data-testid="plan-item">
@@ -202,7 +205,7 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{name}</div>
                     <div className="text-xs text-ink-dim tabular">
-                      {entry && `${formatDurationShort(entry.stats.durationS)}${entry.stats.tss !== null ? ` · TSS ${Math.round(entry.stats.tss)}` : ''} · `}
+                      {entry && (entry.workout.ftpTest?.protocol === 'ramp' ? 'Ramp test, about 20 to 30 min · ' : `${formatDurationShort(entry.stats.durationS)}${entry.stats.tss !== null ? ` · TSS ${Math.round(entry.stats.tss)}` : ''} · `)}
                       <span data-testid="plan-item-date">{date ? `${DAY.format(dateKeyToMs(date))}${item.date ? ' (from the file name)' : ''}` : 'No day yet'}</span>
                     </div>
                   </div>

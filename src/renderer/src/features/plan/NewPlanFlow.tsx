@@ -15,7 +15,7 @@ import { Dialog } from '../../ui/Dialog'
 import { Field, Input, Select, Slider } from '../../ui/form'
 import { formatDurationShort } from '../../ui/format'
 import { Segmented, type SegmentedOption } from '../../ui/Segmented'
-import { describeWorkout, IMPORT_EXTENSIONS, loadLibrary } from '../../workouts/library'
+import { describeWorkout, IMPORT_EXTENSIONS, loadLibrary, plannedStatsOf } from '../../workouts/library'
 
 type Step = 'event' | 'fill' | 'survey' | 'builder' | 'review'
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -298,8 +298,8 @@ function Choice({ icon: Icon, title, text, onClick, disabled, testId }: { icon: 
 function Review({ draft, name, onName }: { draft: PlanDraft; name: string; onName: (n: string) => void }) {
   const library = useLiveQuery(() => loadLibrary(draft.ftpW), [draft.ftpW])
   const stats = useMemo(() => {
-    const m = new Map((library ?? []).map((e) => [e.workout.id, e.stats]))
-    for (const w of draft.written) m.set(w.id, describeWorkout(w, draft.ftpW).stats)
+    const m = new Map((library ?? []).map((e) => [e.workout.id, plannedStatsOf(e.workout, e.stats)]))
+    for (const w of draft.written) m.set(w.id, plannedStatsOf(w, describeWorkout(w, draft.ftpW).stats))
     return m
   }, [library, draft])
   return (
