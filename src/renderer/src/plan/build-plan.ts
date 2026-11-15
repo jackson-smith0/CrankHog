@@ -66,7 +66,7 @@ export async function draftBuiltinPlan(input: DraftInput): Promise<PlanDraft> {
 
 /** What the AI planner is told: the survey, the weeks it plans (after any base weeks before them), and recent training recorded here. */
 async function plannerInput(input: DraftInput, baseWeeksBefore: number, ftpW: number): Promise<string> {
-  const [weeks, pmc] = await Promise.all([weeklyLoad(6), pmcSeries(1)])
+  const [weeks, pmc] = await Promise.all([weeklyLoad(6, { sports: 'rides' }), pmcSeries(1, { sports: 'rides' })])
   const context = {
     survey: input.survey,
     weeks: input.weeks,

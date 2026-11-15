@@ -92,7 +92,7 @@ export function HomePage() {
         <Stat
           label="This week"
           value={data?.week ? `${Math.round(data.week.tss)} TSS` : '—'}
-          sub={data?.week ? `${data.week.rides} ride${data.week.rides === 1 ? '' : 's'} · ${formatDurationShort(data.week.hours * 3600)} · ${Math.round(data.week.kj)} kJ` : undefined}
+          sub={data?.week ? `${data.week.rides} ride${data.week.rides === 1 ? '' : 's'}${data.week.others > 0 ? ` + ${data.week.others} other` : ''} · ${formatDurationShort(data.week.hours * 3600)} · ${Math.round(data.week.kj)} kJ` : undefined}
           to="/fitness"
         />
         <Stat

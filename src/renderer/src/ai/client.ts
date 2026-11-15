@@ -94,7 +94,7 @@ export function rideFacts(r: RideSummary) {
 
 /** Recent training context for the coach (locally recorded rides only, never Strava data). */
 export async function trainingContext(): Promise<string> {
-  const [rides, pmc, curve, ftp] = await Promise.all([realRides(Date.now() - 42 * 86_400_000), pmcSeries(42), powerCurve(), ftpHistory()])
+  const [rides, pmc, curve, ftp] = await Promise.all([realRides(Date.now() - 42 * 86_400_000), pmcSeries(42, { sports: 'rides' }), powerCurve(), ftpHistory()])
   const now = pmc.at(-1)
   return JSON.stringify({
     today: new Date().toISOString().slice(0, 10),
@@ -108,7 +108,7 @@ export async function trainingContext(): Promise<string> {
 
 /** The numbers behind the Fitness page's overview (locally recorded, non-simulated rides only). */
 export async function fitnessFacts(): Promise<FitnessFacts> {
-  const [pmc, weeks, recent, curve, ftp] = await Promise.all([pmcSeries(42), weeklyLoad(5), realRides(Date.now() - 28 * 86_400_000), powerCurve(), currentFtp()])
+  const [pmc, weeks, recent, curve, ftp] = await Promise.all([pmcSeries(42, { sports: 'rides' }), weeklyLoad(5, { sports: 'rides' }), realRides(Date.now() - 28 * 86_400_000), powerCurve(), currentFtp()])
   const now = pmc.at(-1)
   // six weeks ago, but only if the rider was already riding then (otherwise it's the model's empty start, not a fitness of 0)
   const firstRide = (await realRides(0))[0]

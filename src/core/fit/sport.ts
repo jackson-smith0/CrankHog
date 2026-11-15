@@ -9,14 +9,35 @@ const SPORT: Record<string, string> = {
   fitness_equipment: 'Gym',
   rowing: 'Row',
   cross_country_skiing: 'Ski',
+  e_biking: 'E-bike ride',
+  racket: 'Racket sport',
+  tennis: 'Tennis',
 }
 
-/** "running" → "Run"; an unknown FIT sport reads as itself ("e_biking" → "E biking"). */
-export const sportLabel = (sport: string): string => SPORT[sport] ?? sport.charAt(0).toUpperCase() + sport.slice(1).replace(/_/g, ' ')
+/** Sub-sports that name the activity better than its sport does: a FIT squash game is sport "racket". */
+const SUB_SPORT: Record<string, string> = {
+  squash: 'Squash',
+  padel: 'Padel',
+  pickleball: 'Pickleball',
+  badminton: 'Badminton',
+  racquetball: 'Racquetball',
+  table_tennis: 'Table tennis',
+  strength_training: 'Strength',
+  open_water: 'Open water swim',
+  trail: 'Trail run',
+}
 
-/** "Morning run", "Evening strength": by the local time it started. */
-export function activityName(sport: string, startedAt: number): string {
+const plain = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ')
+
+/** "running" → "Run"; "racket" with sub-sport "squash" → "Squash"; an unknown FIT sport reads as itself ("kayaking" → "Kayaking"). */
+export function sportLabel(sport: string, subSport?: string | null): string {
+  if (subSport && SUB_SPORT[subSport]) return SUB_SPORT[subSport]
+  return SPORT[sport] ?? plain(sport)
+}
+
+/** "Morning run", "Evening squash": by the local time it started. */
+export function activityName(sport: string, startedAt: number, subSport?: string | null): string {
   const h = new Date(startedAt).getHours()
   const part = h < 5 ? 'Night' : h < 11 ? 'Morning' : h < 14 ? 'Lunch' : h < 18 ? 'Afternoon' : 'Evening'
-  return `${part} ${sportLabel(sport).toLowerCase()}`
+  return `${part} ${sportLabel(sport, subSport).toLowerCase()}`
 }

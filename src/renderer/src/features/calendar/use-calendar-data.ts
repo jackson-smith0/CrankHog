@@ -4,6 +4,9 @@
 import { useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { projectPmc, type ProjectedPmcRow } from '@core/metrics/pmc'
+import { dailyLoad } from '@core/sport/daily-load'
+import { activityGroup } from '@core/sport/group'
+import { activityLoad } from '@core/sport/load'
 import { completions, dateKey, plannedWorkoutId, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
 import type { VolumeInput } from '@core/workout/volume'
 import { db } from '../../db/db'
@@ -39,8 +42,11 @@ export function useCalendarData(from: number, to: number, today: DateKey) {
   const activities = useLiveQuery(() => db().activities.where('startedAt').between(from, to).toArray(), [from, to])
   const marks = useLiveQuery(() => db().dayMarks.where('date').between(fromKey, toKey, true, true).toArray(), [fromKey, toKey])
   const plans = useLiveQuery(() => db().plans.toArray(), [])
-  // fitness needs every ride before the grid, and every workout planned from today to its end
-  const history = useLiveQuery(() => db().rides.toArray().then((all) => all.filter((r) => !r.simulated).map((r) => ({ date: dateKey(r.startedAt), tss: r.tss ?? 0 }))), [])
+  // fitness needs every ride and other sport before the grid, and every workout planned from today to its end
+  const history = useLiveQuery(async () => {
+    const [allRides, others] = await Promise.all([db().rides.toArray(), db().activities.toArray()])
+    return dailyLoad({ rides: allRides, activities: others.map((a) => ({ startedAt: a.startedAt, load: activityLoad(a) })) })
+  }, [])
   const ahead = useLiveQuery(() => (toKey > today ? listScheduled(today, toKey) : Promise.resolve([])), [today, toKey])
   const { ftpW } = useFtp()
   const library = useLiveQuery(() => loadLibrary(ftpW), [ftpW])
@@ -57,8 +63,8 @@ export function useCalendarData(from: number, to: number, today: DateKey) {
     const done = completions(s, r.map((x) => ({ id: x.id, startedAt: x.startedAt, workoutId: x.workoutId, simulated: x.simulated })))
     return {
       planned: s.map((e) => ({ date: e.date, durationS: stats.get(e.id)?.durationS ?? null, load: stats.get(e.id)?.tss ?? null, done: done.has(e.id) })),
-      rides: r.map((x) => ({ startedAt: x.startedAt, movingS: x.movingS, tss: x.tss, simulated: x.simulated })),
-      activities: (activities ?? []).map((a) => ({ startedAt: a.startedAt, movingS: a.movingS, hrLoad: a.hrLoad })),
+      rides: r.map((x) => ({ startedAt: x.startedAt, movingS: x.movingS, tss: x.tss, simulated: x.simulated, distanceM: x.distanceM })),
+      activities: (activities ?? []).map((a) => ({ startedAt: a.startedAt, movingS: a.movingS, load: activityLoad(a), sport: activityGroup(a), distanceM: a.distanceM })),
     }
   }, [schedule, rides, activities, stats])
 
