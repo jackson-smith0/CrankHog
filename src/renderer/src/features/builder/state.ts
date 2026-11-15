@@ -106,8 +106,14 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
       const history = redo(s.history)
       return history === s.history ? s : { ...s, history, rev: s.rev + 1 }
     }
-    case 'saved':
-      return { ...s, cleanKey: contentKey(a.workout) }
+    case 'saved': {
+      // saving can file the workout in a plan it makes on the spot: the draft
+      // takes that plan too, or it would differ from what was saved and look unsaved
+      if (a.workout.planId === w.planId) return { ...s, cleanKey: contentKey(a.workout) }
+      const { planId: _old, ...rest } = w
+      const workout: Workout = a.workout.planId === undefined ? rest : { ...w, planId: a.workout.planId }
+      return { ...s, history: amend(s.history, { workout, selected }), cleanKey: contentKey(a.workout) }
+    }
   }
 }
 

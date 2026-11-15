@@ -110,22 +110,22 @@ describe('MonthCalendar', () => {
     const ss = workoutPreview(BUILTINS.find((w) => w.id === 'builtin:sweet-spot-3x12')!, DEFAULT_FTP_W)
     render(<MonthCalendar />)
 
-    const card = await appears(`[data-date="${ahead}"] [data-testid="calendar-planned"][aria-label^="Sweet spot"]`)
-    expect(card.querySelector('[data-testid="calendar-card-stats"]')!.textContent).toBe(`${hoursMinutes(ss.plannedS)}·${ss.avgW} W`)
-    expect(card.querySelector('[data-testid="calendar-card-shape"] svg path')).toBeTruthy()
+    // the card shows first; its numbers and shape follow once the library has loaded
+    const card = `[data-date="${ahead}"] [data-testid="calendar-planned"][aria-label^="Sweet spot"]`
+    expect((await appears(`${card} [data-testid="calendar-card-stats"]`)).textContent).toBe(`${hoursMinutes(ss.plannedS)}·${ss.avgW} W`)
+    await appears(`${card} [data-testid="calendar-card-shape"] svg path`)
     // a ramp test: its usual length, and no average
-    const ramp = await appears(`[data-date="${ahead}"] [data-testid="calendar-planned"][aria-label^="Ramp test"]`)
-    expect(ramp.querySelector('[data-testid="calendar-card-stats"]')!.textContent).toBe('0:25ramp')
+    expect((await appears(`[data-date="${ahead}"] [data-testid="calendar-planned"][aria-label^="Ramp test"] [data-testid="calendar-card-stats"]`)).textContent).toBe('0:25ramp')
 
     if (missedDay) {
-      const missed = await appears(`[data-date="${missedDay}"] [data-testid="calendar-planned"]`)
-      expect(missed.querySelector('[data-testid="calendar-card-shape"]')!.className).toMatch(/opacity-45/)
+      const shape = await appears(`[data-date="${missedDay}"] [data-testid="calendar-planned"] [data-testid="calendar-card-shape"]`)
+      expect(shape.className).toMatch(/opacity-45/)
     }
     if (doneDay) {
       // done as planned: green, with the planned workout's card
-      const done = await appears(`[data-date="${doneDay}"] [data-testid="calendar-ride"][data-done]`)
-      expect(done.querySelector('[data-testid="calendar-card-stats"]')!.textContent).toContain(`${ss.avgW} W`)
-      expect(done.querySelector('[data-testid="calendar-card-shape"]')!.className).not.toMatch(/opacity-45/)
+      const done = `[data-date="${doneDay}"] [data-testid="calendar-ride"][data-done]`
+      expect((await appears(`${done} [data-testid="calendar-card-stats"]`)).textContent).toContain(`${ss.avgW} W`)
+      expect((await appears(`${done} [data-testid="calendar-card-shape"]`)).className).not.toMatch(/opacity-45/)
     }
   })
 })
