@@ -1,0 +1,68 @@
+import 'fake-indexeddb/auto'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RideSummary } from '@core/ride/types'
+import { addDays, dateKey } from '@core/workout/schedule'
+import { db } from '../../db/db'
+import { MonthCalendar } from './MonthCalendar'
+
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => async () => undefined }))
+
+const today = dateKey(Date.now())
+const dayMs = (key: string, h = 18) => {
+  const [y, m, d] = key.split('-').map(Number) as [number, number, number]
+  return new Date(y, m - 1, d, h).getTime()
+}
+const ride = (id: string, key: string, workoutId: string, tss: number): RideSummary =>
+  ({ id, name: id, kind: 'workout', simulated: false, startedAt: dayMs(key), endedAt: dayMs(key) + 3_600_000, movingS: 3600, tss, workoutId, mmp: [], laps: [], athlete: { ftpW: 250, weightKg: 75 } }) as unknown as RideSummary
+
+beforeEach(async () => {
+  await db().delete()
+  await db().open()
+})
+afterEach(() => cleanup())
+
+/** Days of the current month only, so the test holds on any date. */
+const inMonth = (offset: number) => {
+  const key = addDays(today, offset)
+  return key.slice(0, 7) === today.slice(0, 7) ? key : null
+}
+
+describe('MonthCalendar', () => {
+  it('highlights today and greys the days before it', async () => {
+    render(<MonthCalendar />)
+    const cell = await waitFor(() => document.querySelector(`[data-date="${today}"]`)!)
+    expect(cell.getAttribute('data-today')).toBe('true')
+    const yesterday = document.querySelector(`[data-date="${addDays(today, -1)}"]`)
+    expect(yesterday?.getAttribute('data-past')).toBe('true')
+    expect(document.querySelector(`[data-date="${addDays(today, 1)}"]`)?.getAttribute('data-past')).toBeNull()
+  })
+
+  it('turns a done workout green and a missed one red', async () => {
+    const past = inMonth(-1) ?? inMonth(1)
+    // pick two days this month: one ridden as planned, one missed (needs a day before today)
+    const missedDay = inMonth(-2)
+    if (!past || !missedDay) return // the 1st or 2nd of a month: nothing earlier to miss
+    await db().schedule.bulkPut([
+      { id: 'done', date: past, workoutId: 'builtin:sweet-spot-3x12', workout: null, name: 'Sweet spot', source: 'manual', createdAt: 1 },
+      { id: 'missed', date: missedDay, workoutId: 'builtin:vo2max-5x4', workout: null, name: 'VO2', source: 'manual', createdAt: 2 },
+    ])
+    await db().rides.put(ride('r1', past, 'builtin:sweet-spot-3x12', 60))
+    render(<MonthCalendar />)
+    const doneChip = await screen.findByRole('button', { name: /r1/ })
+    expect(doneChip.getAttribute('data-done')).toBe('true')
+    const missedChip = await screen.findByRole('button', { name: 'VO2, missed' })
+    expect(missedChip.getAttribute('data-status')).toBe('missed')
+  })
+
+  it('shows each week’s planned and completed volume beside it', async () => {
+    const day = inMonth(1) ?? inMonth(-1)!
+    await db().schedule.put({ id: 'p', date: day, workoutId: 'builtin:sweet-spot-3x12', workout: null, name: 'Sweet spot', source: 'manual', createdAt: 1 })
+    render(<MonthCalendar />)
+    await waitFor(() => expect(screen.getAllByTestId('week-volume').some((w) => /Planned/.test(w.textContent ?? ''))).toBe(true))
+    const week = screen.getAllByTestId('week-volume').find((w) => /Planned/.test(w.textContent ?? ''))!
+    // Sweet spot 3×12 is about an hour at the default FTP
+    expect(within(week).getByText(/0 done · 1 planned/)).toBeTruthy()
+    expect(screen.getByTestId('month-volume').textContent).toMatch(/1 workout(?!s)/)
+  })
+})

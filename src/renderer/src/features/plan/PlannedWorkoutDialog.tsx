@@ -14,7 +14,7 @@ const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric'
 const STATUS: Record<Exclude<ScheduleStatus, 'done'>, string> = { planned: 'Planned', today: 'Planned for today', missed: 'Missed' }
 
 /** A planned workout from the calendar: ride it, move it to another day, or take it off. */
-export function PlannedWorkoutDialog({ entry, status, onClose }: { entry: ScheduledWorkout; status: Exclude<ScheduleStatus, 'done'>; onClose: () => void }) {
+export function PlannedWorkoutDialog({ entry, status, planName, onClose }: { entry: ScheduledWorkout; status: Exclude<ScheduleStatus, 'done'>; planName?: string; onClose: () => void }) {
   const navigate = useNavigate()
   const riding = useRide((s) => s.active)
   const [date, setDate] = useState(entry.date)
@@ -60,7 +60,7 @@ export function PlannedWorkoutDialog({ entry, status, onClose }: { entry: Schedu
       open
       onOpenChange={(o) => !o && onClose()}
       title={entry.name}
-      description={`${STATUS[status]}: ${DAY.format(dateKeyToMs(entry.date))}`}
+      description={`${STATUS[status]}: ${DAY.format(dateKeyToMs(entry.date))}${planName ? `, from ${planName}` : ''}`}
       footer={
         <>
           <Button variant="ghost" onClick={() => void remove()} disabled={busy} data-testid="planned-remove">

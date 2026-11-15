@@ -84,7 +84,7 @@ function decodeStreams(o: Record<string, unknown>): RideStreams {
 
 export async function createBackup(): Promise<Uint8Array> {
   const d = db()
-  const [rides, streams, workouts, ftpHistory, profile, kv, routes, routeRides, journeys, schedule] = await Promise.all([
+  const [rides, streams, workouts, ftpHistory, profile, kv, routes, routeRides, journeys, schedule, plans, activities, dayMarks] = await Promise.all([
     d.rides.toArray(),
     d.rideStreams.toArray(),
     d.workouts.toArray(),
@@ -95,6 +95,9 @@ export async function createBackup(): Promise<Uint8Array> {
     d.routeRides.toArray(),
     d.journeys.toArray(),
     d.schedule.toArray(),
+    d.plans.toArray(),
+    d.activities.toArray(),
+    d.dayMarks.toArray(),
   ])
   const files: Zippable = {
     'manifest.json': strToU8(JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, createdAt: Date.now(), counts: { rides: rides.length, workouts: workouts.length, routes: routes.length } })),
@@ -107,6 +110,9 @@ export async function createBackup(): Promise<Uint8Array> {
     'routeRides.json': strToU8(JSON.stringify(routeRides, typedReplacer)),
     'journeys.json': strToU8(JSON.stringify(journeys)),
     'schedule.json': strToU8(JSON.stringify(schedule)),
+    'plans.json': strToU8(JSON.stringify(plans)),
+    'activities.json': strToU8(JSON.stringify(activities)),
+    'dayMarks.json': strToU8(JSON.stringify(dayMarks)),
   }
   for (const s of streams) files[`streams/${s.rideId}.json`] = strToU8(JSON.stringify(encodeStreams(s)))
   return zipSync(files, { level: 6 })
@@ -140,11 +146,14 @@ export async function restoreBackup(zip: Uint8Array): Promise<RestoreResult> {
   const journeys = json<unknown[]>('journeys.json', [])
   // backups from before the schedule have none
   const schedule = json<unknown[]>('schedule.json', [])
+  const plans = json<unknown[]>('plans.json', [])
+  const activities = json<unknown[]>('activities.json', [])
+  const dayMarks = json<unknown[]>('dayMarks.json', [])
   const streams = Object.keys(files)
     .filter((n) => n.startsWith('streams/') && n.endsWith('.json'))
     .map((n) => decodeStreams(JSON.parse(strFromU8(files[n]!)) as Record<string, unknown>))
 
-  await d.transaction('rw', [d.rides, d.rideStreams, d.workouts, d.ftpHistory, d.profile, d.kv, d.routes, d.routeRides, d.journeys, d.schedule], async () => {
+  await d.transaction('rw', [d.rides, d.rideStreams, d.workouts, d.ftpHistory, d.profile, d.kv, d.routes, d.routeRides, d.journeys, d.schedule, d.plans, d.activities, d.dayMarks], async () => {
     await d.rides.bulkPut(rides as never[])
     await d.rideStreams.bulkPut(streams)
     await d.workouts.bulkPut(workouts as never[])
@@ -155,6 +164,9 @@ export async function restoreBackup(zip: Uint8Array): Promise<RestoreResult> {
     await d.routeRides.bulkPut(routeRides as never[])
     await d.journeys.bulkPut(journeys as never[])
     await d.schedule.bulkPut(schedule as never[])
+    await d.plans.bulkPut(plans as never[])
+    await d.activities.bulkPut(activities as never[])
+    await d.dayMarks.bulkPut(dayMarks as never[])
   })
   return { rides: rides.length, workouts: workouts.length, ftpEntries: ftpHistory.length, routes: routes.length }
 }

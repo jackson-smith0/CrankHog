@@ -199,7 +199,7 @@ export function WorkoutDetailDialog({
             onClick={() =>
               void run(async () => {
                 await scheduleWorkout(scheduleDate, { id: w.id, name: w.name })
-                onNotice({ tone: 'good', text: `Planned ${w.name} for ${SCHEDULE_DAY.format(dateKeyToMs(scheduleDate))}. It's on the calendar in Training plan.` })
+                onNotice({ tone: 'good', text: `Planned ${w.name} for ${SCHEDULE_DAY.format(dateKeyToMs(scheduleDate))}. It's on your Calendar.` })
                 onClose()
               })
             }

@@ -23,6 +23,8 @@ export interface ScheduledWorkout {
   source: 'manual' | 'intervals'
   /** The intervals.icu event id, for workouts imported from there. */
   externalId?: string
+  /** The training plan that put it here. */
+  planId?: string
   createdAt: number
 }
 
