@@ -44,6 +44,7 @@ export const INVOKE_CHANNELS = [
   'intervals.configure',
   'intervals.clear',
   'intervals.planned',
+  'intervals.activities',
   'uploads.enqueue',
   'uploads.list',
   'uploads.retry',

@@ -6,6 +6,9 @@ import { patchSettings, useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Field, Input, Section, Switch } from '../../ui/form'
 import { RideDescriptionFields } from './RideDescriptionFields'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { lastActivitySync } from '../../plan/intervals-activities'
+import { stravaHint } from '../calendar/sync-text'
 
 const open = (url: string) => void bridge().invoke('files.openUrl', { url })
 
@@ -14,6 +17,8 @@ const loadStatus = () => Promise.all([bridge().invoke('strava.status', {}), brid
 export function IntegrationsSection() {
   const autoUpload = useSettings((s) => s.autoUpload)
   const rideSnapshots = useSettings((s) => s.rideSnapshots)
+  const intervalsSync = useSettings((s) => s.intervalsSync)
+  const lastSync = useLiveQuery(() => lastActivitySync(), [])
   const [strava, setStrava] = useState<InvokeRes<'strava.status'> | null>(null)
   const [icu, setIcu] = useState<InvokeRes<'intervals.status'> | null>(null)
   const [exportDir, setExportDir] = useState('')
@@ -168,6 +173,17 @@ export function IntegrationsSection() {
         )}
         <Field label="Auto-upload">
           <Switch checked={autoUpload.intervals} disabled={!icu?.configured} onChange={(v) => void patchSettings({ autoUpload: { ...autoUpload, intervals: v } })} label={autoUpload.intervals ? 'On' : 'Off'} />
+        </Field>
+        <Field
+          label="Completed activities"
+          hint="Runs, swims, squash and outdoor rides recorded on your Garmin show on the Calendar and count in weekly volume and fitness. Checked at launch and every two hours. Connect Garmin to intervals.icu directly: activities it got from Strava can't be shared. Never sent to the AI."
+        >
+          <Switch checked={intervalsSync.activities} disabled={!icu?.configured} onChange={(v) => void patchSettings({ intervalsSync: { ...intervalsSync, activities: v } })} label={intervalsSync.activities ? 'On' : 'Off'} />
+          {intervalsSync.activities && lastSync && (
+            <p className="mt-2 text-xs text-ink-dim" data-testid="activity-sync-status">
+              Last checked {new Date(lastSync.at).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.{lastSync.fromStrava > 0 && <> {stravaHint(lastSync.fromStrava)}</>}
+            </p>
+          )}
         </Field>
       </Section>
     </>

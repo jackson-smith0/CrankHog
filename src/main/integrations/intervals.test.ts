@@ -60,3 +60,42 @@ describe('intervals.icu planned workouts', () => {
     expect(seen).toHaveLength(0)
   })
 })
+
+describe('intervals.icu activities', () => {
+  const garminRun = { id: 'i101', start_date_local: '2026-11-18T07:00:00', start_date: '2026-11-18T15:00:00Z', type: 'Run', name: 'Morning Run', moving_time: 2400, distance: 8000, average_heartrate: 150, max_heartrate: 172, icu_training_load: 52, source: 'GARMIN_CONNECT', external_id: null, icu_ftp: 250 }
+
+  it('asks for activities in a date range and trims each one', async () => {
+    const { client, seen } = await fakeIntervals([garminRun])
+    client.configure({ apiKey: 'secret-key-123', athleteId: 'i42' })
+    const res = await client.activities('2026-11-04', '2026-11-18')
+    expect(seen[0]!.path).toBe('/api/v1/athlete/i42/activities')
+    expect(Object.fromEntries(seen[0]!.query)).toEqual({ oldest: '2026-11-04', newest: '2026-11-18' })
+    expect(res).toEqual({
+      fromStrava: 0,
+      activities: [{ id: 'i101', start_date_local: '2026-11-18T07:00:00', start_date: '2026-11-18T15:00:00Z', type: 'Run', name: 'Morning Run', moving_time: 2400, distance: 8000, average_heartrate: 150, max_heartrate: 172, icu_training_load: 52, source: 'GARMIN_CONNECT', external_id: null }],
+    })
+  })
+
+  it('counts activities from Strava without passing them on, and drops malformed ones', async () => {
+    const { client } = await fakeIntervals([
+      { id: 'i1', start_date_local: '2026-11-18T07:00:00', type: 'Run', source: 'STRAVA', _note: 'STRAVA activities are not available via the API' },
+      { id: 'i2', start_date_local: '2026-11-18T09:00:00', type: 'Ride' },
+      { id: 'i3', name: 'No date', moving_time: 60 },
+      { ...garminRun, id: 'i4', average_heartrate: 900, distance: -5, name: 'x'.repeat(400) },
+      42,
+    ])
+    client.configure({ apiKey: 'secret-key-123', athleteId: '0' })
+    const res = await client.activities('2026-11-04', '2026-11-18')
+    expect(res.fromStrava).toBe(2)
+    expect(res.activities).toHaveLength(1)
+    expect(res.activities[0]).toMatchObject({ id: 'i4', average_heartrate: null, distance: null, name: '' })
+  })
+
+  it('refuses without a key, or for too long a range', async () => {
+    const { client, seen } = await fakeIntervals([])
+    await expect(client.activities('2026-11-14', '2026-11-27')).rejects.toThrow(/not configured/)
+    client.configure({ apiKey: 'secret-key-123', athleteId: '0' })
+    await expect(client.activities('2026-01-01', '2026-12-31')).rejects.toThrow(/range/)
+    expect(seen).toHaveLength(0)
+  })
+})

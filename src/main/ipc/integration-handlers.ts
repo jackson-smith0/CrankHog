@@ -62,6 +62,7 @@ export function registerIntegrationHandlers(deps: {
     return { ok: true }
   })
   handle('intervals.planned', async ({ oldest, newest }) => ({ events: await intervals.plannedWorkouts(oldest, newest) }))
+  handle('intervals.activities', async ({ oldest, newest }) => intervals.activities(oldest, newest))
   handle('intervals.clear', () => {
     intervals.clear()
     return { ok: true }

@@ -266,6 +266,9 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 **Ride moments.** Every ride also saves two pictures next to its FIT file: your hardest 30 seconds, and a coach line picked at random, speech bubble included. They show the ride-along, the big numbers and the workout chart, like the shots Zwift adds to your post. Strava only lets partner apps attach photos, so CrankHog can't add them itself. The saved-ride card has **Copy** and **Open on Strava**, so adding one takes a paste. Turn them off in **Settings → Strava & sync**.
 
 **intervals.icu.** Paste your API key and athlete ID (from intervals.icu → Settings → Developer) in **Settings → Strava & sync**.
+- **Completed activities.** Turn on **Completed activities** there, and the runs, swims, squash games and outdoor rides your Garmin records show on the Calendar. They count in weekly volume by sport and in fitness. CrankHog checks at launch and every two hours, and the Calendar has **Refresh activities**.
+- **Garmin first.** Connect your Garmin to intervals.icu directly (on intervals.icu: Settings, Connections). Activities intervals.icu got from Strava can't be passed on, and CrankHog still never reads Strava itself.
+- **Kept out of the AI.** Activities from intervals.icu are never sent to the AI.
 
 **Garmin Connect.** Drag a ride's FIT file into Garmin Connect's import page. There is no automatic upload.
 
@@ -275,7 +278,7 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 - **Grok (xAI):** an API key from [console.x.ai](https://console.x.ai).
 - **Ollama:** runs on your Mac with no key. Install it from [ollama.com](https://ollama.com) and pull a model.
 
-Keys are encrypted with your macOS Keychain and never reach the app's UI process. The AI only ever sees rides recorded on this Mac, never anything from Strava.
+Keys are encrypted with your macOS Keychain and never reach the app's UI process. The AI only ever sees rides recorded on this Mac: never anything from Strava, and never activities synced from intervals.icu.
 
 ## Your data
 

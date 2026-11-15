@@ -223,6 +223,31 @@ export const invoke = {
         .max(400),
     }),
   },
+  /** Completed activities on intervals.icu, local dates both included (at most 92 days). Ones it got from Strava are only counted. */
+  'intervals.activities': {
+    req: z.object({ oldest: LocalDay, newest: LocalDay }),
+    res: z.object({
+      activities: z
+        .array(
+          z.object({
+            id: z.string().max(40),
+            start_date_local: z.string().max(40),
+            start_date: z.string().max(40).nullable(),
+            type: z.string().max(40).nullable(),
+            name: z.string().max(300),
+            moving_time: z.number().min(0).max(7 * 86_400),
+            distance: z.number().min(0).max(2_000_000).nullable(),
+            average_heartrate: z.number().min(0).max(260).nullable(),
+            max_heartrate: z.number().min(0).max(260).nullable(),
+            icu_training_load: z.number().min(0).max(2000).nullable(),
+            source: z.string().max(40).nullable(),
+            external_id: z.string().max(200).nullable(),
+          }),
+        )
+        .max(1000),
+      fromStrava: z.number().int().min(0),
+    }),
+  },
   'uploads.enqueue': {
     req: z.object({
       rideId: RideId,

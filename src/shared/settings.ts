@@ -122,6 +122,8 @@ export const AppSettingsSchema = z.object({
   appearance: z.enum(['system', 'light', 'dark']).default('system'),
   /** Upload finished (non-simulated) rides automatically. */
   autoUpload: z.object({ strava: z.boolean().default(false), intervals: z.boolean().default(false) }).default({ strava: false, intervals: false }),
+  /** Bring completed activities (runs, swims, squash, outdoor rides) in from intervals.icu. Off until the rider turns it on. */
+  intervalsSync: z.object({ activities: z.boolean().default(false) }).default({ activities: false }),
   /** Capture the hardest effort and a coach line from each ride as images, saved next to its FIT file. */
   rideSnapshots: z.boolean().default(true),
   /** The description on uploaded rides (core/ride/upload-text.ts): the rider's text, with {stats} for the numbers they tick. */

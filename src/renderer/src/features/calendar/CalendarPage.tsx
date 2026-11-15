@@ -4,6 +4,7 @@ import { describeImport, importFitFiles } from '../../db/fit-import'
 import { Button } from '../../ui/Button'
 import { PageHeader } from '../../ui/PageHeader'
 import { cn } from '../../ui/cn'
+import { ActivitySync } from './ActivitySync'
 import { IntervalsImport } from './IntervalsImport'
 import { MonthCalendar } from './MonthCalendar'
 import { DayDialog } from './DayDialog'
@@ -49,9 +50,10 @@ export function CalendarPage() {
     >
       <PageHeader
         title="Calendar"
-        subtitle="Planned workouts, rides and other training, a month at a time. Drag a planned workout to move it, or click a day's number to add an event or a day off."
+        subtitle="Planned workouts, rides, runs, swims and everything else, a month at a time. Drag a planned workout to move it, or click a day's number to plan a session, log an activity, or add an event or a day off."
         actions={
           <>
+            <ActivitySync onNotice={setNotice} />
             <IntervalsImport onNotice={setNotice} />
             <input ref={input} type="file" accept=".fit" multiple className="hidden" onChange={(e) => e.target.files && void importFiles(e.target.files)} data-testid="activities-file" />
             <Button size="sm" disabled={!!busy} onClick={() => input.current?.click()} title="Runs, swims and strength sessions from your Garmin as .fit files (or drop them here)" data-testid="import-activities">
