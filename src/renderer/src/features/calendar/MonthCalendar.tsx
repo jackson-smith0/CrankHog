@@ -7,6 +7,7 @@ import { dateKey, isDateKey } from '@core/workout/schedule'
 import { volumeBetween } from '@core/workout/volume'
 import type { OtherActivity } from '../../db/db'
 import { moveScheduled } from '../../plan/schedule-repo'
+import { WorkoutThumb } from '../../charts/WorkoutThumb'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { formatDurationShort } from '../../ui/format'
@@ -15,6 +16,7 @@ import { PlannedWorkoutDialog } from '../plan/PlannedWorkoutDialog'
 import { ActivityDialog } from './ActivityDialog'
 import { sportIcon } from './sport'
 import { calendarMonth, MARK_NAME, shiftMonth, type CalendarDay, type PlannedOnDay } from './calendar'
+import { hoursMinutes, type WorkoutPreview } from './preview'
 import { useCalendarData } from './use-calendar-data'
 import { MonthVolume, WeekVolume } from './VolumePane'
 
@@ -33,7 +35,8 @@ const PLANNED_CHIP: Record<PlannedOnDay['status'], string> = {
 /**
  * A month at a time: rides, other sports and planned workouts on each day,
  * with today highlighted and past days greyed. Done workouts go green and
- * missed ones red. Beside each week, planned against completed volume. Drag
+ * missed ones red. Each planned workout shows its length, its average
+ * planned power and its shape. Beside each week, planned against completed volume. Drag
  * a planned workout to another day to move it, or click it to ride it, move
  * it or remove it.
  */
@@ -112,6 +115,7 @@ export function MonthCalendar({ onDay }: { onDay?: (day: CalendarDay) => void })
                   key={d.key}
                   day={d}
                   planNames={data.planNames}
+                  previews={data.previews}
                   onRide={(r) => void navigate({ to: '/history/$rideId', params: { rideId: r.id } })}
                   onPlanned={setOpenPlanned}
                   onActivity={setOpenActivity}
@@ -145,6 +149,7 @@ export function MonthCalendar({ onDay }: { onDay?: (day: CalendarDay) => void })
 function DayCell({
   day: d,
   planNames,
+  previews,
   onRide,
   onPlanned,
   onActivity,
@@ -152,6 +157,7 @@ function DayCell({
 }: {
   day: CalendarDay
   planNames: ReadonlyMap<string, string>
+  previews: ReadonlyMap<string, WorkoutPreview>
   onRide: (r: RideSummary) => void
   onPlanned: (p: PlannedOnDay) => void
   onActivity: (a: OtherActivity) => void
@@ -218,21 +224,26 @@ function DayCell({
         {rides.map((r) => {
           const asPlanned = plannedRides.has(r.id)
           const Icon = asPlanned ? CircleCheck : KIND_ICON[r.kind]
+          // a ride done as planned keeps the planned workout's card
+          const preview = asPlanned && r.workoutId ? previews.get(r.workoutId) : undefined
           return (
             <button
               key={r.id}
               type="button"
               onClick={() => onRide(r)}
-              title={`${r.name} · ${formatDurationShort(r.movingS)}${r.tss !== null ? ` · ${Math.round(r.tss)} TSS` : ''}${asPlanned ? ' · done, as planned' : ''}`}
+              title={`${r.name}${preview ? ` · planned ${statsText(preview)}` : ''} · ${formatDurationShort(r.movingS)}${r.tss !== null ? ` · ${Math.round(r.tss)} TSS` : ''}${asPlanned ? ' · done, as planned' : ''}`}
               className={cn(
-                'no-drag flex w-full items-center gap-1 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight hover:border-accent',
+                'no-drag block w-full overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight hover:border-accent',
                 asPlanned ? 'border-good/60 bg-good/10' : 'border-line bg-panel-2',
               )}
               data-testid="calendar-ride"
               data-done={asPlanned || undefined}
             >
-              <Icon className={cn('size-3 shrink-0', asPlanned ? 'text-good' : 'text-accent')} aria-label={asPlanned ? 'Done, as planned' : undefined} aria-hidden={!asPlanned} />
-              <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
+              <span className="flex items-center gap-1">
+                <Icon className={cn('size-3 shrink-0', asPlanned ? 'text-good' : 'text-accent')} aria-label={asPlanned ? 'Done, as planned' : undefined} aria-hidden={!asPlanned} />
+                <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
+              </span>
+              {preview && <CardPreview preview={preview} />}
             </button>
           )
         })}
@@ -254,7 +265,7 @@ function DayCell({
           )
         })}
         {planned.map((p) => (
-          <PlannedChip key={p.entry.id} planned={p} planName={p.entry.planId ? planNames.get(p.entry.planId) : undefined} onOpen={() => onPlanned(p)} />
+          <PlannedChip key={p.entry.id} planned={p} preview={previewOf(p.entry, previews)} planName={p.entry.planId ? planNames.get(p.entry.planId) : undefined} onOpen={() => onPlanned(p)} />
         ))}
         {items > MAX_CHIPS && <div className="px-1 text-[11px] text-ink-faint">+{items - MAX_CHIPS} more</div>}
       </div>
@@ -262,7 +273,45 @@ function DayCell({
   )
 }
 
-function PlannedChip({ planned: p, planName, onOpen }: { planned: PlannedOnDay; planName?: string; onOpen: () => void }) {
+const previewOf = (e: PlannedOnDay['entry'], previews: ReadonlyMap<string, WorkoutPreview>) => {
+  const id = e.workoutId ?? e.workout?.id
+  return id ? previews.get(id) : undefined
+}
+
+/** "1:00 · 178 W", or "0:25 ramp" for a ramp test. */
+const statsText = (p: WorkoutPreview) => (p.ramp ? `${hoursMinutes(p.plannedS)} ramp` : `${hoursMinutes(p.plannedS)}${p.avgW !== null ? ` · ${p.avgW} W` : ''}`)
+
+/**
+ * Under a card's name: length and average planned power, then the workout's
+ * shape. Phones are too narrow for the shape, so they show the numbers only.
+ */
+function CardPreview({ preview, faded = false }: { preview: WorkoutPreview; faded?: boolean }) {
+  return (
+    <>
+      {/* phones: length and watts on two lines */}
+      <span className="mt-0.5 flex flex-wrap gap-x-1 font-display text-[11px] leading-tight tabular text-ink-dim md:text-[13px]" data-testid="calendar-card-stats">
+        <span className="whitespace-nowrap">{hoursMinutes(preview.plannedS)}</span>
+        {preview.ramp ? (
+          <span className="text-ink-faint">ramp</span>
+        ) : (
+          preview.avgW !== null && (
+            <>
+              <span className="hidden text-ink-faint md:inline" aria-hidden>
+                ·
+              </span>
+              <span className="whitespace-nowrap">{preview.avgW} W</span>
+            </>
+          )
+        )}
+      </span>
+      <span className={cn('mt-1 hidden overflow-hidden rounded-sm md:block', faded && 'opacity-45 saturate-50')} data-testid="calendar-card-shape">
+        <WorkoutThumb blocks={preview.blocks} durationS={preview.durationS} height={28} />
+      </span>
+    </>
+  )
+}
+
+function PlannedChip({ planned: p, preview, planName, onOpen }: { planned: PlannedOnDay; preview?: WorkoutPreview; planName?: string; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: p.entry.id, data: p })
   const state = p.status === 'missed' ? 'missed' : p.status === 'today' ? 'planned for today' : 'planned'
   return (
@@ -272,19 +321,22 @@ function PlannedChip({ planned: p, planName, onOpen }: { planned: PlannedOnDay; 
       onClick={onOpen}
       {...attributes}
       {...listeners}
-      title={`${p.entry.name} · ${state}${planName ? ` · ${planName}` : ''}. Drag to another day to move it.`}
+      title={`${p.entry.name}${preview ? ` · ${statsText(preview)}` : ''} · ${state}${planName ? ` · ${planName}` : ''}. Drag to another day to move it.`}
       aria-label={`${p.entry.name}, ${state}`}
       style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined}
       className={cn(
-        'no-drag relative flex w-full touch-none items-center gap-1 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight hover:border-accent',
+        'no-drag relative block w-full touch-none overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight hover:border-accent',
         PLANNED_CHIP[p.status],
         isDragging && 'z-20 shadow-lg',
       )}
       data-testid="calendar-planned"
       data-status={p.status}
     >
-      <Gauge className={cn('size-3 shrink-0', p.status === 'missed' ? 'text-bad' : 'text-accent')} aria-hidden />
-      <span className="min-w-0 flex-1 truncate font-medium">{p.entry.name}</span>
+      <span className="flex items-center gap-1">
+        <Gauge className={cn('size-3 shrink-0', p.status === 'missed' ? 'text-bad' : 'text-accent')} aria-hidden />
+        <span className="min-w-0 flex-1 truncate font-medium">{p.entry.name}</span>
+      </span>
+      {preview && <CardPreview preview={preview} faded={p.status === 'missed'} />}
     </button>
   )
 }

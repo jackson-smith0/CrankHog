@@ -6,6 +6,9 @@ import { addDays, dateKey } from '@core/workout/schedule'
 import { db } from '../../db/db'
 import { MonthCalendar } from './MonthCalendar'
 import { calendarMonth } from './calendar'
+import { hoursMinutes, workoutPreview } from './preview'
+import { BUILTINS } from '../../workouts/library'
+import { DEFAULT_FTP_W } from '../../db/athlete-repo'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => async () => undefined }))
 
@@ -91,5 +94,38 @@ describe('MonthCalendar', () => {
     const now = new Date()
     const lastWeekEnd = calendarMonth(now.getFullYear(), now.getMonth(), { rides: [] }).weeks.at(-1)!.endKey
     if (lastWeekEnd > today) expect(weeks.at(-1)!.getAttribute('data-projected')).toBe('true')
+  })
+
+  it('shows each planned workout’s length, average planned power and shape', async () => {
+    const ahead = inMonth(1) ?? inMonth(-1)!
+    const missedDay = inMonth(-2)
+    const doneDay = inMonth(-1)
+    await db().schedule.bulkPut([
+      { id: 'p', date: ahead, workoutId: 'builtin:sweet-spot-3x12', workout: null, name: 'Sweet spot', source: 'manual', createdAt: 1 },
+      { id: 'ramp', date: ahead, workoutId: 'builtin:ramp-test', workout: null, name: 'Ramp test', source: 'manual', createdAt: 2 },
+      ...(missedDay ? [{ id: 'm', date: missedDay, workoutId: 'builtin:sweet-spot-3x12', workout: null, name: 'Missed one', source: 'manual' as const, createdAt: 3 }] : []),
+      ...(doneDay ? [{ id: 'd', date: doneDay, workoutId: 'builtin:sweet-spot-3x12', workout: null, name: 'Done one', source: 'manual' as const, createdAt: 4 }] : []),
+    ])
+    if (doneDay) await db().rides.put(ride('r1', doneDay, 'builtin:sweet-spot-3x12', 60))
+    const ss = workoutPreview(BUILTINS.find((w) => w.id === 'builtin:sweet-spot-3x12')!, DEFAULT_FTP_W)
+    render(<MonthCalendar />)
+
+    const card = await appears(`[data-date="${ahead}"] [data-testid="calendar-planned"][aria-label^="Sweet spot"]`)
+    expect(card.querySelector('[data-testid="calendar-card-stats"]')!.textContent).toBe(`${hoursMinutes(ss.plannedS)}·${ss.avgW} W`)
+    expect(card.querySelector('[data-testid="calendar-card-shape"] svg path')).toBeTruthy()
+    // a ramp test: its usual length, and no average
+    const ramp = await appears(`[data-date="${ahead}"] [data-testid="calendar-planned"][aria-label^="Ramp test"]`)
+    expect(ramp.querySelector('[data-testid="calendar-card-stats"]')!.textContent).toBe('0:25ramp')
+
+    if (missedDay) {
+      const missed = await appears(`[data-date="${missedDay}"] [data-testid="calendar-planned"]`)
+      expect(missed.querySelector('[data-testid="calendar-card-shape"]')!.className).toMatch(/opacity-45/)
+    }
+    if (doneDay) {
+      // done as planned: green, with the planned workout's card
+      const done = await appears(`[data-date="${doneDay}"] [data-testid="calendar-ride"][data-done]`)
+      expect(done.querySelector('[data-testid="calendar-card-stats"]')!.textContent).toContain(`${ss.avgW} W`)
+      expect(done.querySelector('[data-testid="calendar-card-shape"]')!.className).not.toMatch(/opacity-45/)
+    }
   })
 })

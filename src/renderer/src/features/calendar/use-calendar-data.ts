@@ -1,6 +1,6 @@
 // Everything the Calendar shows for a stretch of days, live from IndexedDB:
 // rides, other sports, planned workouts (with their length and TSS at the
-// rider's FTP), events and days off.
+// rider's FTP, and their shapes for the cards), events and days off.
 import { useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { projectPmc, type ProjectedPmcRow } from '@core/metrics/pmc'
@@ -10,6 +10,7 @@ import { db } from '../../db/db'
 import { useFtp } from '../../db/use-athlete'
 import { listScheduled } from '../../plan/schedule-repo'
 import { describeWorkout, loadLibrary, plannedStatsOf } from '../../workouts/library'
+import { previewsFor } from './preview'
 
 export interface PlannedStats {
   durationS: number | null
@@ -61,6 +62,9 @@ export function useCalendarData(from: number, to: number, today: DateKey) {
     }
   }, [schedule, rides, activities, stats])
 
+  /** Each planned workout's shape, length and average watts, by workout id. */
+  const previews = useMemo(() => previewsFor(library ?? [], schedule ?? [], ftpW), [library, schedule, ftpW])
+
   const planNames = useMemo(() => new Map((plans ?? []).map((p) => [p.id, p.name])), [plans])
 
   /** Fitness, fatigue and form on each day of the grid: from rides up to today, projected from planned workouts after it. */
@@ -71,5 +75,5 @@ export function useCalendarData(from: number, to: number, today: DateKey) {
     return new Map(projectPmc(history, planned, { today, from: fromKey, to: toKey }).map((r) => [r.date, r]))
   }, [history, ahead, library, ftpW, today, fromKey, toKey])
 
-  return { rides, schedule, activities, marks, stats, volumeInput, planNames, fitness, loaded: rides !== undefined && schedule !== undefined }
+  return { rides, schedule, activities, marks, stats, volumeInput, planNames, previews, fitness, loaded: rides !== undefined && schedule !== undefined }
 }
