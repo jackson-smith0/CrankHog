@@ -40,3 +40,12 @@ test('Settings: Google Calendar starts signed out, takes the rider’s own app, 
   const sent = await page.evaluate(() => window.crankhog.invoke('google.calendar.sync', { windowStart: '2026-10-17', events: [{ key: 's1', date: '2026-11-18', title: 'Sweet spot', description: '' }] }))
   expect(sent).toEqual({ ok: false })
 })
+
+test('Calendar: Google Calendar can be connected from the calendar page too', async () => {
+  const { page } = ctx
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Calendar', exact: true }).click()
+  // signed out, with an app (built in, or the one the test above saved): it signs in from here
+  const link = page.getByTestId('google-calendar-link')
+  await expect(link).toHaveText('Connect Google Calendar')
+  await expect(link).toBeEnabled()
+})
