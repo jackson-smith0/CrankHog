@@ -100,6 +100,8 @@ describe('MonthCalendar', () => {
         expect(rows[1]!.textContent).toMatch(/Run40m/)
         expect(rows[1]!.textContent).toMatch(/km|mi/)
         expect(rows[2]!.textContent).toMatch(/Other1h 00m/)
+        // the month's line counts them too: 40 min of running and an hour of squash, 45 + 70 load
+        expect(screen.getByTestId('calendar-summary').textContent).toMatch(/0 rides \+ 2 other · 1h 40m · 115 TSS/)
       },
       { timeout: 5000 },
     )

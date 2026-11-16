@@ -133,7 +133,7 @@ export function MonthVolume({ v }: { v: VolumeTotals }) {
       <div className="text-xs">
         <SportRows v={v} />
       </div>
-      {v.compliance !== null && <div className="text-xs text-ink-dim">{Math.round(v.compliance * 100)} % of planned workouts done so far</div>}
+      {v.compliance !== null && <div className="text-xs text-ink-dim">{Math.round(v.compliance * 100)} % of planned sessions done so far</div>}
     </div>
   )
 }

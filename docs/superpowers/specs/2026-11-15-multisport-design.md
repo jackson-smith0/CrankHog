@@ -309,3 +309,10 @@ When this ships, add an entry to `src/core/whats-new/notes.ts` (a test enforces 
   - connect Garmin directly in intervals.icu;
   - enable the sync, then record a run and a squash session and confirm they appear after Refresh;
   - send a planned run to intervals.icu and confirm it reaches Garmin Connect and the watch.
+
+## As built (where the build differs from the plan above)
+- **Plan items.** A run or swim in a plan is a `PlanItem` with `sport` set, and its `workoutId` names the session workout. That leaves `layOutPlan` untouched; there's no separate `sessionWorkoutId` field or `itemWorkoutRef` helper.
+- **Per-sport weekdays** (`TrainingPlan.sports`) were not built. A run takes the plan's ride days.
+- **Sending to intervals.icu** creates, updates and deletes the event by the id intervals.icu returns (`ScheduledWorkout.pushedEventId`), not by bulk upsert. The `freegaz-plan-<entryId>` external id is still sent, so an import skips sessions CrankHog sent. A 404 on update creates the event again; a 404 on delete counts as done.
+- **Pool example.** The report message example uses 160 m, since 175 m is seven whole 25 m lengths.
+- **Not yet tried with real services:** a real intervals.icu account (activities, sending, importing events) and the four format examples in intervals.icu's workout editor. The E2E spec `tests/e2e/multisport.spec.ts` was written but not run here.

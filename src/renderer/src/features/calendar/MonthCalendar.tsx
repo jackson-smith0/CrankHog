@@ -94,7 +94,8 @@ export function MonthCalendar({ onDay }: { onDay?: (day: CalendarDay) => void })
             )}
           </div>
           <div className="mt-1 pl-2 tabular text-sm text-ink-dim" data-testid="calendar-summary">
-            {m.rides} ride{m.rides === 1 ? '' : 's'} · {formatDurationShort(m.movingS)} · {Math.round(m.tss)} TSS
+            {m.rides} ride{m.rides === 1 ? '' : 's'}
+            {monthVolume.completed.sessions > m.rides && ` + ${monthVolume.completed.sessions - m.rides} other`} · {formatDurationShort(monthVolume.completed.durationS)} · {Math.round(monthVolume.completed.load)} TSS
             {m.planned > 0 && ` · ${m.planned} planned`}
           </div>
         </div>
