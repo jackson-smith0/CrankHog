@@ -34,14 +34,29 @@ describe('volumeBetween', () => {
 
   it('splits each side by sport, and a planned entry without a sport is a ride', () => {
     const v = volumeBetween('2026-11-16', '2026-11-22', input)
-    expect(v.planned.bySport.ride).toEqual({ sessions: 2, durationS: 9000, distanceM: 0, load: 140 })
-    expect(v.planned.bySport.run).toEqual({ sessions: 1, durationS: 2700, distanceM: 8000, load: 50 })
-    expect(v.planned.bySport.other).toEqual({ sessions: 1, durationS: 0, distanceM: 0, load: 0 })
-    expect(v.completed.bySport.ride).toEqual({ sessions: 2, durationS: 5500, distanceM: 30_000, load: 62 })
-    expect(v.completed.bySport.run).toEqual({ sessions: 1, durationS: 2400, distanceM: 7000, load: 35.5 })
-    expect(v.completed.bySport.other).toEqual({ sessions: 1, durationS: 3600, distanceM: 0, load: 70 })
+    expect(v.planned.bySport.ride).toEqual({ sessions: 2, durationS: 9000, distanceM: 0, timeOnlyS: 9000, load: 140 })
+    expect(v.planned.bySport.run).toEqual({ sessions: 1, durationS: 2700, distanceM: 8000, timeOnlyS: 0, load: 50 })
+    expect(v.planned.bySport.other).toEqual({ sessions: 1, durationS: 0, distanceM: 0, timeOnlyS: 0, load: 0 })
+    expect(v.completed.bySport.ride).toEqual({ sessions: 2, durationS: 5500, distanceM: 30_000, timeOnlyS: 1800, load: 62 })
+    expect(v.completed.bySport.run).toEqual({ sessions: 1, durationS: 2400, distanceM: 7000, timeOnlyS: 0, load: 35.5 })
+    expect(v.completed.bySport.other).toEqual({ sessions: 1, durationS: 3600, distanceM: 0, timeOnlyS: 3600, load: 70 })
     expect(v.completed.bySport.swim.sessions).toBe(0)
     expect(sportsIn(v)).toEqual(['ride', 'run', 'other'])
+  })
+
+  it('keeps the time of sessions with no distance, for a sport counted in distance', () => {
+    // a CSS set planned by distance alone, and an easy swim planned by time alone
+    const v = volumeBetween('2026-11-16', '2026-11-22', {
+      today: '2026-11-18',
+      planned: [
+        { date: '2026-11-17', durationS: null, load: null, done: false, sport: 'swim', distanceM: 1800 },
+        { date: '2026-11-19', durationS: 2700, load: 30, done: false, sport: 'swim', distanceM: null },
+      ],
+      rides: [],
+      activities: [{ startedAt: at(2026, 11, 17, 7), movingS: 2400, load: 40, sport: 'swim', distanceM: 2000 }],
+    })
+    expect(v.planned.bySport.swim).toMatchObject({ sessions: 2, durationS: 2700, distanceM: 1800, timeOnlyS: 2700 })
+    expect(v.completed.bySport.swim).toMatchObject({ durationS: 2400, distanceM: 2000, timeOnlyS: 0 })
   })
 
   it('has no compliance before anything planned is due', () => {
