@@ -8,7 +8,7 @@ import { recordFtp } from '../db/athlete-repo'
 import { db } from '../db/db'
 import { settingsStore } from '../stores/settings'
 import { BUILTINS, describeWorkout, plannedStatsOf } from '../workouts/library'
-import { MIRROR_DEBOUNCE_MS, mirrorSnapshot, startGoogleMirror } from './google-mirror'
+import { CALENDARS_KV, MIRROR_DEBOUNCE_MS, mirrorSnapshot, startGoogleMirror } from './google-mirror'
 import { moveScheduled, removeScheduled, scheduleSession, scheduleWorkout } from './schedule-repo'
 
 const NOW = new Date(2026, 10, 16, 12).getTime()
@@ -43,13 +43,13 @@ describe('startGoogleMirror', () => {
   const invoke = vi.fn()
   let statusListener: ((s: { connected: boolean }) => void) | null = null
   let stop: () => void = () => undefined
-  const syncs = () => invoke.mock.calls.filter(([c]) => c === 'google.calendar.sync').map(([, req]) => req as { events: { key: string; date: string }[] })
+  const syncs = () => invoke.mock.calls.filter(([c]) => c === 'google.calendar.sync').map(([, req]) => req as { events: { key: string; date: string }[]; calendarHint?: string })
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   beforeEach(() => {
     invoke.mockReset()
     invoke.mockImplementation(async (channel: string) => {
-      if (channel === 'google.status') return { configured: true, builtInApp: true, connected: true, syncing: false }
+      if (channel === 'google.status') return { configured: true, builtInApp: true, connected: true, syncing: false, email: 'rider@example.com', calendarId: 'cal1@group.calendar.google.com' }
       if (channel === 'google.calendar.sync') return { ok: true }
       throw new Error(`unexpected ${channel}`)
     })
@@ -73,6 +73,9 @@ describe('startGoogleMirror', () => {
     stop = startGoogleMirror()
     await wait(MIRROR_DEBOUNCE_MS + 300)
     expect(syncs().at(-1)!.events.map((x) => x.key)).toEqual([e.id])
+    // the account's calendar goes in the backed-up kv table, and back to main as the hint
+    expect((await db().kv.get(CALENDARS_KV))?.value).toEqual({ 'rider@example.com': 'cal1@group.calendar.google.com' })
+    expect(syncs().at(-1)!.calendarHint).toBe('cal1@group.calendar.google.com')
 
     const before = syncs().length
     await moveScheduled(e.id, addDays(dateKey(Date.now()), 4))

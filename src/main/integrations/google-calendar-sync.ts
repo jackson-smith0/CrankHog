@@ -12,6 +12,15 @@ import { isGone, isRetryable, type GoogleClient } from './google'
 export interface MirrorSnapshot {
   windowStart: DateKey
   events: MirrorEvent[]
+  /** The calendar a restored backup knew for this account, to carry on with instead of making another. */
+  calendarHint?: string
+}
+
+/** How a sync went: Google refused some changes outright, but the rest went through. */
+interface SyncResult {
+  eventCount: number
+  total: number
+  refused: HttpError[]
 }
 
 export interface SyncTimers {
@@ -40,7 +49,8 @@ export class GoogleCalendarSync {
   ) {}
 
   status(): GoogleStatus {
-    return { ...this.google.account(), syncing: this.loop !== null, ...this.last }
+    const calendarId = this.google.connected() ? this.google.knownCalendarId() : undefined
+    return { ...this.google.account(), syncing: this.loop !== null, ...(calendarId ? { calendarId } : {}), ...this.last }
   }
 
   /** Makes the calendar match `snapshot`. Resolves once no sync is running (a retry may still be waiting). */
@@ -77,9 +87,10 @@ export class GoogleCalendarSync {
       if (!snap) return this.stop()
       this.pending = null
       try {
-        const eventCount = await this.syncOnce(snap)
+        const r = await this.syncOnce(snap)
         this.attempt = 0
-        this.last = { lastSyncAt: this.timers.now(), eventCount }
+        this.last = { lastSyncAt: this.timers.now(), eventCount: r.eventCount, ...(r.refused.length > 0 ? { lastError: refusedMessage(r) } : {}) }
+        for (const e of r.refused) console.warn(`[google] calendar change refused: ${e.status} ${googleReason(e.body) ?? ''}`.trim())
       } catch (e) {
         this.last = { ...this.last, lastError: message(e) }
         console.warn(`[google] calendar sync failed: ${e instanceof HttpError ? `${e.status} ${googleReason(e.body) ?? ''}`.trim() : message(e)}`)
@@ -102,8 +113,8 @@ export class GoogleCalendarSync {
     this.emit()
   }
 
-  private async syncOnce(snap: MirrorSnapshot): Promise<number> {
-    let calendarId = await this.google.ensureCalendar()
+  private async syncOnce(snap: MirrorSnapshot): Promise<SyncResult> {
+    let calendarId = await this.google.ensureCalendar(snap.calendarHint)
     let actual: MirroredEvent[]
     try {
       actual = await this.google.listEvents(calendarId, snap.windowStart)
@@ -115,10 +126,34 @@ export class GoogleCalendarSync {
       actual = []
     }
     const diff = diffMirror(snap.events, actual, snap.windowStart)
-    for (const id of diff.delete) await this.google.deleteEvent(calendarId, id)
-    for (const u of diff.update) await this.google.updateEvent(calendarId, u.eventId, u.event)
-    for (const e of diff.insert) await this.google.insertEvent(calendarId, e)
-    return new Set(snap.events.filter((e) => e.date >= snap.windowStart).map((e) => e.key)).size
+    // One change Google refuses outright mustn't hold up the others. Anything
+    // worth retrying (offline, rate limits, Google down) or a lost sign-in
+    // stops the sync, and the retry or the next snapshot picks it all up again.
+    const refused: HttpError[] = []
+    const each = async (change: () => Promise<void>) => {
+      try {
+        await change()
+      } catch (e) {
+        if (!(e instanceof HttpError) || isRetryable(e)) throw e
+        refused.push(e)
+      }
+    }
+    const cid = calendarId
+    for (const id of diff.delete) await each(() => this.google.deleteEvent(cid, id))
+    for (const u of diff.update) {
+      await each(async () => {
+        try {
+          await this.google.updateEvent(cid, u.eventId, u.event)
+        } catch (e) {
+          // deleted in Google since the list: put it back
+          if (e instanceof HttpError && isGone(e)) await this.google.insertEvent(cid, u.event)
+          else throw e
+        }
+      })
+    }
+    for (const e of diff.insert) await each(() => this.google.insertEvent(cid, e))
+    const inWindow = new Set(snap.events.filter((e) => e.date >= snap.windowStart).map((e) => e.key)).size
+    return { eventCount: inWindow, total: diff.delete.length + diff.update.length + diff.insert.length, refused }
   }
 
   private emit(): void {
@@ -139,6 +174,13 @@ function message(e: unknown): string {
     return reason ? `Google Calendar refused the change: ${reason}` : `Google Calendar refused the change (${e.status}).`
   }
   return e instanceof Error ? e.message : String(e)
+}
+
+function refusedMessage(r: SyncResult): string {
+  const n = r.refused.length
+  const first = r.refused[0]!
+  const reason = googleReason(first.body) ?? `status ${first.status}`
+  return n === 1 && r.total === 1 ? `Google Calendar refused the change: ${reason}` : `Google Calendar refused ${n} of ${r.total} changes; the rest went through. The first: ${reason}`
 }
 
 const REASON_MAX = 200

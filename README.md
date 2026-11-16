@@ -279,6 +279,8 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 - **CrankHog is the plan.** Drag an event to another day in Google and it goes back to its day in CrankHog. Move it in CrankHog instead.
 - **Your own Google app.** Official builds carry CrankHog's own Google app, so you just sign in. A build without it (a local build, or a fork) shows a short setup: make a free Google Cloud project, enable the Calendar API, create a *Desktop app* OAuth client, and paste its client ID and secret.
 - **Signing out** revokes CrankHog's access. The CrankHog calendar stays in Google; delete it there if you no longer want it.
+- **One calendar per account.** Each Google account you sign in with keeps its own CrankHog calendar, and switching back reuses it. On a new Mac, restore your backup (**Settings → Data & backup**) before signing in and CrankHog carries on with the same calendar. Without the backup it makes a new one, and you can delete the old one in Google.
+- **A refused change doesn't hold up the rest.** If Google turns one event down, the others still go across, and Settings says which went wrong.
 
 **Garmin Connect.** Drag a ride's FIT file into Garmin Connect's import page. There is no automatic upload.
 

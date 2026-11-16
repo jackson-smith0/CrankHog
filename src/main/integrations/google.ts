@@ -47,7 +47,7 @@ export interface GoogleTokens {
   email?: string
 }
 
-/** The calendar CrankHog made, and for which account. */
+/** The calendar CrankHog made, and for which account (the shape before calendars were kept per account). */
 interface StoredCalendar {
   email: string | null
   calendarId: string
@@ -55,7 +55,10 @@ interface StoredCalendar {
 
 const SECRET_APP = 'google.app'
 const SECRET_TOKENS = 'google.tokens'
-const SECRET_CALENDAR = 'google.calendar'
+/** One calendar for the last account only: read once and folded into SECRET_CALENDARS. */
+const SECRET_CALENDAR_V1 = 'google.calendar'
+/** The CrankHog calendar of each Google account signed in on this Mac, by address ("" when Google gave none). */
+const SECRET_CALENDARS = 'google.calendars'
 
 interface TokenResponse {
   access_token: string
@@ -203,23 +206,62 @@ export class GoogleClient {
 
   // ---- the CrankHog calendar ----------------------------------------------
 
-  /** The CrankHog calendar's id, making the calendar when this account has none yet. */
-  async ensureCalendar(): Promise<string> {
-    const email = this.tokens()?.email ?? null
-    const stored = this.secrets.getJson<StoredCalendar>(SECRET_CALENDAR)
-    if (stored && stored.email === email) return stored.calendarId
+  private calendars(): Record<string, string> {
+    const map = this.secrets.getJson<Record<string, string>>(SECRET_CALENDARS) ?? {}
+    const v1 = this.secrets.getJson<StoredCalendar>(SECRET_CALENDAR_V1)
+    if (!v1) return map
+    const merged = { [v1.email ?? '']: v1.calendarId, ...map }
+    this.secrets.setJson(SECRET_CALENDARS, merged)
+    this.secrets.delete(SECRET_CALENDAR_V1)
+    return merged
+  }
+
+  private accountKey(): string {
+    return this.tokens()?.email ?? ''
+  }
+
+  private rememberCalendar(calendarId: string | null): void {
+    const { [this.accountKey()]: _dropped, ...rest } = this.calendars()
+    this.secrets.setJson(SECRET_CALENDARS, calendarId ? { ...rest, [this.accountKey()]: calendarId } : rest)
+  }
+
+  /** The CrankHog calendar this Mac knows for the signed-in account, if any. */
+  knownCalendarId(): string | undefined {
+    return this.calendars()[this.accountKey()]
+  }
+
+  /**
+   * The CrankHog calendar's id. In order: the one this Mac keeps for the
+   * signed-in account (so switching accounts back and forth never makes a
+   * second one); then `hint`, the calendar a restored backup knew, when Google
+   * confirms this app can still reach it (a new Mac carries on with the same
+   * calendar); else a new calendar.
+   */
+  async ensureCalendar(hint?: string): Promise<string> {
+    const known = this.knownCalendarId()
+    if (known) return known
+    if (hint) {
+      try {
+        await this.api('GET', `/calendars/${encodeURIComponent(hint)}`)
+        this.rememberCalendar(hint)
+        return hint
+      } catch (e) {
+        // gone, or made by another Google app or for another account: make a new one
+        if (!(e instanceof HttpError) || !(isGone(e) || (e.status === 403 && !isRetryable(e)))) throw e
+      }
+    }
     const created = await this.api<{ id: string }>('POST', '/calendars', {
       summary: MIRROR_CALENDAR_NAME,
       description: 'Planned training from CrankHog. Plan, move and remove workouts in CrankHog, and this calendar follows.',
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     })
-    this.secrets.setJson(SECRET_CALENDAR, { email, calendarId: created.id } satisfies StoredCalendar)
+    this.rememberCalendar(created.id)
     return created.id
   }
 
-  /** The stored calendar is gone (the rider deleted it in Google): the next ensureCalendar makes a new one. */
+  /** The account's calendar is gone (the rider deleted it in Google): the next ensureCalendar makes a new one. */
   forgetCalendar(): void {
-    this.secrets.delete(SECRET_CALENDAR)
+    this.rememberCalendar(null)
   }
 
   /** Events in the calendar from the day before `from` on, with the key and fingerprint CrankHog stored on its own. */

@@ -6,6 +6,7 @@
 import { liveQuery } from 'dexie'
 import { mirrorEvent, type MirrorSource } from '@core/calendar-mirror/event-text'
 import { mirrorWindowStart, type MirrorEvent } from '@core/calendar-mirror/mirror'
+import type { GoogleStatus } from '@shared/ipc/contract'
 import type { UnitSystem } from '@core/units'
 import { dateKey, entrySport, isBikeWorkout, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
 import { currentFtp, DEFAULT_FTP_W } from '../db/athlete-repo'
@@ -56,6 +57,23 @@ async function sourceOf(e: ScheduledWorkout, ftpW: number): Promise<MirrorSource
   }
 }
 
+/**
+ * The CrankHog calendar of each Google account, by address. Kept in the
+ * database's kv table, which backups carry, so a new Mac restored from a
+ * backup carries on with the same calendar instead of making a second one.
+ */
+export const CALENDARS_KV = 'googleCalendar.calendars'
+
+export async function knownCalendars(): Promise<Record<string, string>> {
+  const value = (await db().kv.get(CALENDARS_KV))?.value
+  return value && typeof value === 'object' ? (value as Record<string, string>) : {}
+}
+
+async function rememberCalendar(email: string, calendarId: string): Promise<void> {
+  const map = await knownCalendars()
+  if (map[email] !== calendarId) await db().kv.put({ key: CALENDARS_KV, value: { ...map, [email]: calendarId } })
+}
+
 let resendNow: (() => void) | null = null
 
 /** Sends the calendar to Google now, even if nothing changed since the last send. */
@@ -70,6 +88,7 @@ export function startGoogleMirror(): () => void {
   let lastSent: string | null = null
   let timer: number | undefined
   let connected = false
+  let email = ''
 
   const send = async (force: boolean) => {
     timer = undefined
@@ -77,7 +96,8 @@ export function startGoogleMirror(): () => void {
     const body = JSON.stringify(latest)
     if (!force && body === lastSent) return
     try {
-      const r = await bridge().invoke('google.calendar.sync', latest)
+      const calendarHint = (await knownCalendars())[email]
+      const r = await bridge().invoke('google.calendar.sync', { ...latest, ...(calendarHint ? { calendarHint } : {}) })
       lastSent = r.ok ? body : null
     } catch {
       lastSent = null
@@ -110,9 +130,11 @@ export function startGoogleMirror(): () => void {
     }
     if (s.googleCalendar.enabled && !prev.googleCalendar.enabled) void send(true)
   })
-  const onStatus = (s: { connected: boolean }) => {
+  const onStatus = (s: GoogleStatus) => {
     const signedIn = s.connected && !connected
     connected = s.connected
+    email = s.email ?? ''
+    if (s.connected && s.calendarId) void rememberCalendar(email, s.calendarId).catch(() => undefined)
     if (signedIn) void send(true)
   }
   const offStatus = bridge().on('google.calendar.changed', onStatus)

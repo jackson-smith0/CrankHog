@@ -41,9 +41,9 @@ export function registerGoogleHandlers(deps: {
     sync.reset()
     return { ok: true }
   })
-  handle('google.calendar.sync', ({ windowStart, events }) => {
+  handle('google.calendar.sync', ({ windowStart, events, calendarHint }) => {
     if (!deps.syncEnabled() || !google.connected()) return { ok: false }
-    void sync.request({ windowStart, events })
+    void sync.request({ windowStart, events, ...(calendarHint ? { calendarHint } : {}) })
     return { ok: true }
   })
   return sync

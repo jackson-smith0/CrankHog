@@ -75,6 +75,8 @@ export const GoogleStatusSchema = z.object({
   lastError: z.string().optional(),
   /** Events CrankHog keeps in the calendar, as of the last sync. */
   eventCount: z.number().int().min(0).optional(),
+  /** The signed-in account's CrankHog calendar, kept in backups so a new Mac carries on with it. */
+  calendarId: z.string().max(300).optional(),
 })
 export type GoogleStatus = z.infer<typeof GoogleStatusSchema>
 const AiProviderSchema = z.enum(['anthropic', 'openai', 'grok', 'ollama'])
@@ -299,6 +301,8 @@ export const invoke = {
       events: z
         .array(z.object({ key: z.string().min(1).max(200), date: LocalDay, title: z.string().min(1).max(300), description: z.string().max(8000) }))
         .max(3000),
+      /** The calendar a restored backup knew for this account. */
+      calendarHint: z.string().min(1).max(300).optional(),
     }),
     res: Ok,
   },
