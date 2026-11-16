@@ -8,6 +8,8 @@ export const EXTERNAL_ALLOWLIST = [
   'strava.com',
   'connect.garmin.com',
   'intervals.icu',
+  'console.cloud.google.com',
+  'calendar.google.com',
   'github.com',
   'zwiftinsider.com',
   'console.anthropic.com',

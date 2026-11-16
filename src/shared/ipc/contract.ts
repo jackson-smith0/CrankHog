@@ -62,6 +62,21 @@ export const UpdateStatusSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('error'), message: z.string() }),
 ])
 export type UpdateStatus = z.infer<typeof UpdateStatusSchema>
+/** Google sign-in and the CrankHog calendar mirrored there. Never carries a token. */
+export const GoogleStatusSchema = z.object({
+  /** A Google app is available: built into this build, or the rider's own. */
+  configured: z.boolean(),
+  /** This build carries CrankHog's own Google app, so riders needn't make one. */
+  builtInApp: z.boolean(),
+  connected: z.boolean(),
+  email: z.string().optional(),
+  syncing: z.boolean(),
+  lastSyncAt: z.number().optional(),
+  lastError: z.string().optional(),
+  /** Events CrankHog keeps in the calendar, as of the last sync. */
+  eventCount: z.number().int().min(0).optional(),
+})
+export type GoogleStatus = z.infer<typeof GoogleStatusSchema>
 const AiProviderSchema = z.enum(['anthropic', 'openai', 'grok', 'ollama'])
 const AiStatusSchema = z.object({
   provider: AiProviderSchema.nullable(),
@@ -269,6 +284,24 @@ export const invoke = {
   },
   /** Takes a session CrankHog sent off the intervals.icu calendar. */
   'intervals.deleteWorkout': { req: z.object({ eventId: z.string().min(1).max(40) }), res: Ok },
+  'google.status': { req: Empty, res: GoogleStatusSchema },
+  /** The rider's own Google app (a Desktop OAuth client), for builds without CrankHog's. */
+  'google.setApp': {
+    req: z.object({ clientId: z.string().regex(/^[0-9]{1,30}-[a-z0-9]{8,64}\.apps\.googleusercontent\.com$/), clientSecret: z.string().regex(/^[A-Za-z0-9_-]{20,80}$/) }),
+    res: Ok,
+  },
+  'google.connect': { req: Empty, res: z.object({ ok: z.boolean(), email: z.string().optional(), error: z.string().optional() }) },
+  'google.disconnect': { req: Empty, res: Ok },
+  /** Every planned entry from `windowStart` on: main makes the CrankHog calendar in Google match. */
+  'google.calendar.sync': {
+    req: z.object({
+      windowStart: LocalDay,
+      events: z
+        .array(z.object({ key: z.string().min(1).max(200), date: LocalDay, title: z.string().min(1).max(300), description: z.string().max(8000) }))
+        .max(3000),
+    }),
+    res: Ok,
+  },
   'uploads.enqueue': {
     req: z.object({
       rideId: RideId,
@@ -344,6 +377,8 @@ export interface EventMap {
   /** The system is about to sleep / just woke: pause the ride. */
   'power.suspend': { suspended: boolean }
   'uploads.changed': OutboxItemDto
+  /** The Google sign-in or calendar sync changed. */
+  'google.calendar.changed': GoogleStatus
   'update.status': UpdateStatus
   'ai.stream.delta': { streamId: string; text: string }
   'ai.stream.end': { streamId: string; text: string | null; error: string | null; code: string | null; model: string | null }

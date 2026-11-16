@@ -1,0 +1,80 @@
+# Google Calendar for CrankHog: design
+
+## Context
+
+Riders plan their training on CrankHog's calendar (1.0.0, multisport in 1.0.1). They want that plan next to the rest of their life. They sign in with their Google account once. From then on, every planned workout appears as an all-day event in a Google calendar named "CrankHog". When a workout moves on CrankHog's calendar, it moves in Google too.
+
+The fork's `main` was synced with Ray's 1.0.1 before this work started, and this branch builds on it.
+
+## Goals
+- Sign in with Google from the Mac app. No tokens reach the renderer.
+- Every planned entry in `schedule` appears in Google as an all-day event: bike workouts and planned runs, swims and other sessions.
+- Adding, moving, renaming or removing an entry, re-laying a plan, and importing from intervals.icu all reach Google within seconds. Changes made offline go across later.
+
+## Non-goals
+- Events (races) and days off. They aren't sent.
+- Reading anything back from Google, or treating Google as a second place to plan.
+- The web and iPhone builds. They have no safe store for tokens yet, the same as Strava and intervals.icu.
+
+## Anti-goals
+- Touching the rider's own calendars or events. The scope only reaches calendars this app created, and only events CrankHog tagged are ever changed.
+- Duplicate events after retries, a reconnect, or a plan re-lay.
+- Rewriting history: events older than 30 days are left alone.
+
+## Approaches considered
+1. **Push on each action**, as intervals.icu does (`intervals-push.ts`, called from `moveScheduled`, `removeScheduled` and the plan re-lay). Small, but every new way of changing the calendar needs its own hook. New entries, renames and imports would each need one, and a change made while offline would be lost.
+2. **An outbox of changes** in main, like `UploadOutbox`. Durable, but it duplicates state and needs a change log for Dexie, which has none.
+3. **A stateless mirror (chosen).** The renderer sends the whole window of planned entries, debounced, whenever anything it reads changes (Dexie `liveQuery`). Main lists the CrankHog calendar, diffs, and applies the result. It heals itself and needs no new tables. A sync costs one list call when nothing changed.
+
+The rider asked for the feature and handed over the how. The base branch, what syncs, and where the Google app comes from were the rider's to pick. They didn't choose, so the recommended options went ahead and are flagged below.
+
+## Design
+
+**Core** (`src/core/calendar-mirror/`, pure and tested):
+- `mirror.ts`:
+  - `MirrorEvent { key, date, title, description }`, where `key` is the schedule entry's id.
+  - `googleEventId(key)`: a deterministic base32hex id, `ch` plus four hex digits per UTF-16 unit. A retried insert therefore hits a 409 instead of making a duplicate.
+  - `fingerprint` (FNV-1a).
+  - `diffMirror(desired, actual, windowStart)`. It only touches events with a key, never anything before the window, rewrites an event on a fingerprint or day mismatch, and removes duplicates. The 30-day window is `MIRROR_PAST_DAYS`.
+- `event-text.ts`:
+  - The title is the entry's name.
+  - The description is the sport (and label), length, distance, effort, then TSS or load, then the notes, then a footer saying the calendar follows CrankHog. Sentence case, no emoji.
+
+**Main:**
+- `integrations/google.ts`: `GoogleClient`.
+  - Sign-in: loopback OAuth with PKCE (S256), `access_type=offline` and `prompt=consent`. Scopes are `openid email calendar.app.created`. A grant with the calendar box unticked is refused.
+  - Tokens and calendar: refresh happens below five minutes left. A refused refresh signs the rider out (`GoogleAuthError`). Disconnect revokes the grant.
+  - Calendar calls: the calendar is created once per account. Event list, insert, update and delete are here too. A 409 on insert becomes an update that restores the event; if that fails, the event is inserted under an id Google picks.
+  - Events are all-day, `transparent`, have no reminders, and carry `crankhogKey` and `crankhogFp` in their private extended properties.
+- `integrations/google-calendar-sync.ts`: `GoogleCalendarSync`.
+  - One sync runs at a time, and only the newest snapshot is kept.
+  - A deleted calendar is recreated.
+  - It backs off on 429, 5xx, network errors and Google's rate-limit 403s, honouring Retry-After. Any other refusal waits for the next snapshot.
+  - Status is pushed on `google.calendar.changed`.
+- `integrations/oauth-loopback.ts`: the loopback listener, moved out of `strava.ts` and now shared by both sign-ins.
+- `integrations/google-app.ts`: CrankHog's own Google app, defined at build time from `CRANKHOG_GOOGLE_CLIENT_ID` and `CRANKHOG_GOOGLE_CLIENT_SECRET` (`electron.vite.config.ts`). It is never committed.
+- `ipc/google-handlers.ts`: the `google.status`, `google.setApp`, `google.connect`, `google.disconnect` and `google.calendar.sync` channels. A sync is ignored unless the setting is on and the rider is signed in. A new sign-in turns the setting on.
+
+**Renderer:**
+- `plan/google-mirror.ts`:
+  - `mirrorSnapshot` builds the window. Bike workouts get their planned length and TSS at the current FTP, through the library's `describeWorkout` and `plannedStatsOf`.
+  - `startGoogleMirror` watches with `liveQuery`, waits for 2 s of quiet before sending, and skips a snapshot identical to the last one sent.
+  - It also sends when the rider signs in or switches the sync on, and every hour anyway (to move the window and put dragged events back).
+- `features/settings/GoogleCalendarSection.tsx` sits under Settings, Strava & sync, and is hidden in the web and iPhone builds. It has:
+  - sign in and sign out;
+  - the sync switch, its status line, **Update now** and **Open Google Calendar**;
+  - the own-app form when the build has no built-in app.
+- Setting: `googleCalendar.enabled` in `src/shared/settings.ts`, a new key that defaults to off.
+
+## Calls made by the builder (rider can override)
+- **Base:** this fork's `main` after syncing with Ray's 1.0.1, which holds the calendar.
+- **What syncs:** all planned sessions, not events or days off.
+- **Google app:** both. The built-in app is used when the build carries one; otherwise the rider pastes their own Desktop OAuth client. Shipping the built-in one needs a Google Cloud project owned by whoever publishes the app, and Google's OAuth verification for public use, which requires the privacy policy page on the site.
+- **A separate calendar named "CrankHog"**, never the primary calendar.
+- **Sign-out keeps the calendar** in Google. The message says how to delete it.
+- **No reminders, shown as free time.** A planned workout shouldn't block the day or ping the rider's phone.
+- **CrankHog's day wins.** An event dragged in Google goes back. A title edited in Google stays until the entry changes in CrankHog.
+
+## Left to whoever ships it
+- Create the Google Cloud project, the consent screen and the Desktop OAuth client, set the two CI secrets for release builds, and go through verification.
+- Check during the first real sign-in that Google grants `calendar.app.created` to the app. If a project can't get it, `CALENDAR_SCOPE` falls back to `https://www.googleapis.com/auth/calendar`, and the consent text grows accordingly.
