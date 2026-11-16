@@ -9,6 +9,8 @@ import { calendarMonth } from './calendar'
 import { hoursMinutes, workoutPreview } from './preview'
 import { BUILTINS } from '../../workouts/library'
 import { DEFAULT_FTP_W } from '../../db/athlete-repo'
+import { settingsStore } from '../../stores/settings'
+import { DEFAULT_SETTINGS } from '@shared/settings'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => async () => undefined }))
 
@@ -24,7 +26,10 @@ beforeEach(async () => {
   await db().delete()
   await db().open()
 })
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  settingsStore.setState(DEFAULT_SETTINGS, true)
+})
 
 /** The element once it exists: waitFor retries only while the callback throws. */
 const appears = (selector: string) =>
@@ -108,6 +113,7 @@ describe('MonthCalendar', () => {
   })
 
   it('counts a week’s swimming in metres, since swims are often planned with no time', async () => {
+    settingsStore.setState({ ...DEFAULT_SETTINGS, units: 'metric' }, true)
     const day = inMonth(-1) ?? inMonth(1)!
     // a CSS set planned by distance alone, and a swim done
     await db().schedule.put({ id: 'ps', date: day, workoutId: null, workout: null, name: 'CSS 10x100', source: 'manual', sport: 'swim', session: { distanceM: 1800 }, createdAt: 1 })
@@ -116,7 +122,21 @@ describe('MonthCalendar', () => {
     await waitFor(
       () => {
         const row = screen.getAllByTestId('week-volume').map((w) => w.querySelector('[data-sport="swim"]')).find(Boolean)
-        expect(row?.textContent).toMatch(/Swim2,000 m \/ 1,800 m40m/)
+        expect(row?.textContent).toMatch(/Swim2,000 m \/ 1,800 m40 min/)
+      },
+      { timeout: 5000 },
+    )
+  })
+
+  it('keeps the time of a swim planned with no distance, in yards for imperial units', async () => {
+    const day = inMonth(-1) ?? inMonth(1)!
+    await db().schedule.put({ id: 'ps', date: day, workoutId: null, workout: null, name: 'CSS 10x100', source: 'manual', sport: 'swim', session: { distanceM: 1800 }, createdAt: 1 })
+    await db().schedule.put({ id: 'pt', date: day, workoutId: null, workout: null, name: 'Easy swim', source: 'manual', sport: 'swim', session: { durationS: 2700 }, createdAt: 2 })
+    render(<MonthCalendar />)
+    await waitFor(
+      () => {
+        const row = screen.getAllByTestId('week-volume').map((w) => w.querySelector('[data-sport="swim"]')).find(Boolean)
+        expect(row?.textContent).toBe('Swim0 yd / 1,969 yd + 45 min')
       },
       { timeout: 5000 },
     )

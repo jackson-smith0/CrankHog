@@ -13,8 +13,3 @@ export function formatSportDistance(m: number, sport: SportGroup, units: UnitSys
   }
   return `${formatLongDistance(m, units, 1)} ${units === 'imperial' ? 'mi' : 'km'}`
 }
-
-/** A swim's volume in metres, whatever the rider's units: "1,800 m". Swims are planned by distance, often with no time at all. */
-export function formatSwimMetres(m: number): string {
-  return `${Math.round(m).toLocaleString('en-US')} m`
-}

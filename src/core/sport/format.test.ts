@@ -12,12 +12,3 @@ describe('formatSportDistance', () => {
     expect(formatSportDistance(16093.44, 'ride', 'imperial')).toBe('10 mi')
   })
 })
-
-describe('formatSwimMetres', () => {
-  it('gives a swim’s volume in metres, with thousands marked', async () => {
-    const { formatSwimMetres } = await import('./format')
-    expect(formatSwimMetres(1800)).toBe('1,800 m')
-    expect(formatSwimMetres(0)).toBe('0 m')
-    expect(formatSwimMetres(91.44)).toBe('91 m')
-  })
-})
