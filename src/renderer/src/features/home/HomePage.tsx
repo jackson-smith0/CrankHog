@@ -4,6 +4,10 @@ import { Link } from '@tanstack/react-router'
 import { Battery, BatteryLow, BatteryMedium, Bike, Calendar, Flame, Gauge, Moon, Mountain, Sunrise, Trophy, Zap, type LucideIcon } from 'lucide-react'
 import { computeAchievements, computeStreaks, type AchievementIcon, type AchievementRide } from '@core/metrics/achievements'
 import { suggestNextWorkout } from '@core/workout/suggest'
+import { activityGroup } from '@core/sport/group'
+import { dateKey, dateKeyToMs, todaysWorkout } from '@core/workout/schedule'
+import { listScheduled } from '../../plan/schedule-repo'
+import { nextEvent } from '../../plan/day-marks-repo'
 import { BUILTINS } from '../../workouts/library'
 import type { InvokeRes } from '@shared/ipc/contract'
 import { currentProfile, DEFAULT_WEIGHT_KG, ftpHistory } from '../../db/athlete-repo'
@@ -32,9 +36,10 @@ export function HomePage() {
   }, [])
 
   const data = useLiveQuery(async () => {
-    const [rides, ftp, profile, pmc, week, curve] = await Promise.all([db().rides.toArray(), ftpHistory(), currentProfile(), pmcSeries(1), weeklyLoad(1), powerCurve()])
+    const todayKey = dateKey(Date.now())
+    const [rides, ftp, profile, pmc, week, curve, schedule, event, todaysActivities] = await Promise.all([db().rides.toArray(), ftpHistory(), currentProfile(), pmcSeries(1), weeklyLoad(1), powerCurve(), listScheduled(todayKey, todayKey), nextEvent(Date.now()), db().activities.where('startedAt').aboveOrEqual(dateKeyToMs(todayKey)).toArray()])
     const eftpW = curve.eftp.method === 'cp' ? Math.round(curve.eftp.ftpW) : null
-    return { rides, ftp, weightKg: profile?.weightKg ?? DEFAULT_WEIGHT_KG, today: pmc.at(-1) ?? null, week: week.at(-1) ?? null, eftpW }
+    return { rides, ftp, weightKg: profile?.weightKg ?? DEFAULT_WEIGHT_KG, today: pmc.at(-1) ?? null, week: week.at(-1) ?? null, eftpW, schedule, event, todaysActivities }
   }, [])
 
   const derived = useMemo(() => {
@@ -52,7 +57,8 @@ export function HomePage() {
       hardRidesLast7: real.filter((r) => now - r.startedAt < 7 * DAY && ((r.intensityFactor ?? 0) >= 0.85 || (r.tss ?? 0) >= 80)).length,
       hoursSinceLastRide: lastRide ? (now - lastRide.endedAt) / 3_600_000 : null,
     })
-    return { achievements, streaks: computeStreaks(rides, now), lastRide, suggestion, suggested: BUILTINS.find((w) => w.id === suggestion.workoutId) ?? null }
+    const planned = todaysWorkout(data.schedule, data.rides, now, data.todaysActivities.map((a) => ({ id: a.id, startedAt: a.startedAt, group: activityGroup(a) })))
+    return { achievements, streaks: computeStreaks(rides, now), lastRide, suggestion, suggested: BUILTINS.find((w) => w.id === suggestion.workoutId) ?? null, planned }
   }, [data, now])
 
   const ftpNow = data?.ftp.at(-1) ?? null
@@ -64,7 +70,7 @@ export function HomePage() {
   return (
     <div className="mx-auto max-w-6xl px-4 md:px-8 pb-10">
       <div className="pt-12" />
-      <HomeHero rides={data?.rides ?? []} tsb={data?.today?.tsb ?? null} now={now} suggested={derived?.suggested ?? null} reason={derived?.suggestion.reason ?? null} />
+      <HomeHero rides={data?.rides ?? []} tsb={data?.today?.tsb ?? null} now={now} suggested={derived?.suggested ?? null} reason={derived?.suggestion.reason ?? null} today={derived?.planned ?? null} event={data?.event ?? null} />
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Your numbers">
         <Stat
@@ -87,7 +93,7 @@ export function HomePage() {
         <Stat
           label="This week"
           value={data?.week ? `${Math.round(data.week.tss)} TSS` : '—'}
-          sub={data?.week ? `${data.week.rides} ride${data.week.rides === 1 ? '' : 's'} · ${formatDurationShort(data.week.hours * 3600)} · ${Math.round(data.week.kj)} kJ` : undefined}
+          sub={data?.week ? `${data.week.rides} ride${data.week.rides === 1 ? '' : 's'}${data.week.others > 0 ? ` + ${data.week.others} other` : ''} · ${formatDurationShort(data.week.hours * 3600)} · ${Math.round(data.week.kj)} kJ` : undefined}
           to="/fitness"
         />
         <Stat

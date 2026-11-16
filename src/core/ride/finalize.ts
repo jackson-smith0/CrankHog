@@ -1,7 +1,10 @@
 // Turns a finished session's records into the stored ride: summary row,
 // columnar streams and the FIT file. Pure: the renderer persists the output.
+// A ride recorded here has its pauses closed first (close-pauses.ts), so the
+// history, the FIT and the uploads all show elapsed time equal to moving time.
 import { encodeFitActivity, type FitLapSummary } from '../fit/activity'
 import { WPrimeBalance, averagePower, kilojoules, maxPower, normalizedPower, summarizeRide } from '../metrics'
+import { closePauses } from './close-pauses'
 import type { RideRecord } from './recorder'
 import { recordsToStreams, type RideStreams } from './streams'
 import type { AthleteSnapshot, LapRow, RideKind, RideSummary } from './types'
@@ -35,6 +38,9 @@ export interface FinalizedRide {
   streams: RideStreams
   fit: Uint8Array | null
 }
+
+/** Fewer seconds than this was a press of Start, not a ride: finishing drops it, and recovery doesn't offer it. */
+export const MIN_RIDE_S = 5
 
 const mean = (xs: (number | null)[]): number | null => {
   let s = 0
@@ -84,7 +90,9 @@ export function computeLaps(records: RideRecord[], labels: string[] = []): LapRo
 }
 
 export function finalizeRide(input: FinalizeInput): FinalizedRide {
-  const { records, athlete } = input
+  const { athlete } = input
+  // someone else's file is kept as their device recorded it
+  const records = input.imported ? input.records : closePauses(input.records)
   const power = records.map((r) => r.power)
   const s = summarizeRide({
     power,

@@ -47,6 +47,46 @@ const np = (xs: (number | null)[]) => {
 }
 
 describe('workouts on the simulated KICKR', () => {
+  it('waits for the rider: a minute standing over the bike is not ridden, and the workout starts at its first second', async () => {
+    const rig = simRig({ ftpW: FTP })
+    await rig.connect('trainer')
+    await rig.connect('hr')
+    rig.world.setBehavior({ kind: 'coast' })
+    const workout = BUILTIN_WORKOUTS.find((w) => w.id === 'builtin:over-unders-3x9')!
+    const plan = new WorkoutPlan(workout, { ftpW: FTP })
+    const session = new RideSession(
+      { clock: rig.clock, hub: rig.hub, controller: rig.controller, journal, setPaused: (p) => rig.engine.setPaused(p) },
+      { rideId: 'sim-wait', name: workout.name, kind: plan.kind, simulated: true, athlete: { ftpW: FTP, weightKg: 75 }, autoPause: true, plan },
+    )
+    rig.engine.onTick((now) => session.tick(now))
+    session.start()
+    await rig.advance(60_000, 250)
+    expect(session.currentState).toBe('waiting')
+    expect(session.movingSeconds).toBe(0)
+    // the trainer holds the paused load, not the first interval's ERG target, so its soft start is still to come
+    expect(rig.controller.snapshot.guard).toBe('paused')
+    expect(rig.world.trainer.mode).toBe('resistance')
+    const guards = new Set<string>()
+    const off = rig.engine.onTick(() => guards.add(rig.controller.snapshot.guard))
+    rig.world.setBehavior({ kind: 'hold', watts: 60 }) // the first easy strokes
+    await rig.advance(15_000, 250)
+    off()
+    expect(session.currentState).toBe('riding')
+    expect(guards.has('soft-start')).toBe(true)
+    expect(rig.controller.snapshot.guard).toBe('none')
+    rig.world.setBehavior({ kind: 'auto' })
+    await rig.advance(105_000, 250)
+    const { records } = await rig.until(session.finish())
+    rig.engine.stop()
+    rig.devices.disconnectAll()
+    rig.world.stop()
+    expect(session.snapshot().movingS).toBeGreaterThan(110)
+    expect(records[0]!.t).toBe(0)
+    expect(Math.abs(records[0]!.targetW! - targetAt(plan.timeline, 0.5, FTP)!.watts!)).toBeLessThanOrEqual(3)
+    // no zeros at the front: the clock started with the first stroke
+    expect(records.slice(0, 5).every((r) => (r.power ?? 0) > 0 || (r.cadence ?? 0) > 0)).toBe(true)
+  }, 30_000)
+
   it('rides a 60-minute over-under session in ERG: a lap per step, targets recorded, NP on plan', async () => {
     const workout = BUILTIN_WORKOUTS.find((w) => w.id === 'builtin:over-unders-3x9')!
     const { plan, records, events, durationS } = await rideWorkout(workout)

@@ -2,10 +2,11 @@
 // then the FIT file goes to the export folder (main) and, if enabled, into
 // the Strava / intervals.icu upload outbox. The journal is deleted only once
 // all of that has succeeded, so a crash at any step is recoverable.
-import { finalizeRide, type FinalizeInput } from '@core/ride/finalize'
+import { MIN_RIDE_S, finalizeRide, type FinalizeInput } from '@core/ride/finalize'
 import { parseJournal } from '@core/ride/journal'
 import type { RideSummary } from '@core/ride/types'
 import { MIN_UPLOAD_S, uploadSkipReason, type UploadSkip } from '@core/ride/upload-policy'
+import { uploadDescription } from '@core/ride/upload-text'
 import type { Journey } from '@core/journeys/progress'
 import type { SavedJourney } from '../journeys/ride'
 import type { SavedMoment } from '../moments/store'
@@ -49,7 +50,8 @@ export async function saveFinishedRide(
   const stravaConnected = auto.strava ? await bridge().invoke('strava.status', {}).then((st) => st.connected, () => false) : false
   const stravaSkip = uploadSkipReason({ simulated: fin.summary.simulated, movingS: fin.summary.movingS, hasFit: fitPath !== null, autoOn: auto.strava, connected: stravaConnected })
   if (fitPath && !fin.summary.simulated && fin.summary.movingS >= MIN_UPLOAD_S) {
-    const description = descriptionExtra ? `${descriptionExtra}\n${describe(fin.summary)}` : describe(fin.summary)
+    const { text, stats } = settingsStore.getState().rideDescription
+    const description = uploadDescription({ text, stats, numbers: fin.summary, extra: descriptionExtra })
     for (const provider of ['strava', 'intervals'] as const) {
       if (!auto[provider] || (provider === 'strava' && stravaSkip !== null)) continue
       await bridge().invoke('uploads.enqueue', {
@@ -73,18 +75,6 @@ export async function saveFinishedRide(
   return { summary: fin.summary, fitPath, uploads, stravaSkip }
 }
 
-/** A short Strava description: the numbers people actually look at. */
-export function describe(s: RideSummary): string {
-  const parts = [
-    s.np !== null ? `NP ${s.np} W` : null,
-    s.intensityFactor !== null ? `IF ${s.intensityFactor.toFixed(2)}` : null,
-    s.tss !== null ? `TSS ${Math.round(s.tss)}` : null,
-    `${Math.round(s.kj)} kJ`,
-    s.avgHr !== null ? `avg HR ${s.avgHr}` : null,
-  ].filter(Boolean)
-  return `${parts.join(' · ')}\nRecorded with CrankHog.`
-}
-
 export interface PendingRecovery {
   rideId: string
   name: string | null
@@ -102,7 +92,8 @@ export async function pendingRecoveries(): Promise<PendingRecovery[]> {
       await bridge().invoke('journal.remove', { rideId: j.rideId })
       continue
     }
-    if (j.records > 0) out.push(j)
+    // the rule finishing a ride uses: a few seconds is a press of Start, not a ride
+    if (j.records >= MIN_RIDE_S) out.push(j)
     else await bridge().invoke('journal.remove', { rideId: j.rideId })
   }
   return out
@@ -112,7 +103,7 @@ export async function pendingRecoveries(): Promise<PendingRecovery[]> {
 export async function recoverRide(rideId: string): Promise<SaveResult | null> {
   const { text } = await bridge().invoke('journal.read', { rideId })
   const j = parseJournal(text)
-  if (!j.meta || j.records.length === 0) return null
+  if (!j.meta || j.records.length < MIN_RIDE_S) return null
   return saveFinishedRide({
     rideId,
     name: j.meta.name,

@@ -38,7 +38,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 
 <p align="center"><img src="docs/screenshots/coach.png" alt="Coach settings: the personas, a sample line, spice from gentle to feral, and profanity from clean to unhinged" width="900"></p>
 
-**Workouts you can see before they hurt you,** on three shelves: CrankHog's own workouts, your Custom ones, and a Training plan you put in order.
+**Workouts you can see before they hurt you,** on three shelves: CrankHog's own workouts, your Custom ones, and your Training plans.
 
 <p align="center">
   <img src="docs/screenshots/workouts.png" alt="The Workouts page on its CrankHog workouts tab: every workout drawn as its power profile at your FTP, with Custom workouts and Training plan tabs beside it" width="440">
@@ -76,6 +76,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
   - A "spiral of death" guard: once you're riding, resistance is released if your cadence collapses below 45 rpm, and comes back once you hold 55. A standing start never trips it.
   - One command per second with deadbands, and targets sent a second early to hide trainer lag.
   - Everything is re-applied after a reconnect.
+- **Spin-down calibration.** **Calibrate trainer** on the trainer's card in **Devices** walks you through it: speed up to the speed your trainer asks for, stop pedalling, and let it measure the coast-down. For FTMS trainers that support it. If your trainer asks for one, CrankHog tells you.
 - **Journeys** (Settings → Journeys, off by default).
   - **Where to?** on the ride screen: a random famous start, a particular one, the journey you're on, a new grand journey, or any GPX you imported.
   - Distance comes from your power, weight and bike through the same physics as route rides. Real terrain slows you on the climbs; flat is watts to distance only. No power, no progress.
@@ -87,6 +88,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
   - Change the intensity in 1 % steps.
   - Ride any workout in Level or Slope mode instead of ERG.
   - Text cues appear as the workout reaches them, and every interval becomes a lap.
+  - Countdown beeps 3, 2 and 1 seconds before each interval ends, and a longer one as the next begins. They keep going when the coach is muted (**Settings → Coach**).
 - **Interval rescue.** When a hard interval is failing, it offers 5 % easier or a 30-second breather instead of letting you bail.
 - **FTP tests.**
   - **20-minute** (Allen & Coggan). During the effort ERG turns off: the trainer puts you on a 3 % climb (↑/↓ changes it) and a pacing band and projected FTP guide you.
@@ -115,7 +117,13 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **Your units.** Metric or imperial, with speed (km/h or mph) and weight (kg or lb) set on their own. Tap the unit on the speed tile to flip it mid-ride.
 
 **Building workouts**
-- **Three shelves.** CrankHog's own workouts, your Custom workouts, and your Training plan: a numbered list you put in order. Anything you build lands in Custom unless you file it in the plan.
+- **Three shelves.** CrankHog's own workouts, your Custom workouts, and your Training plans. Anything you build lands in Custom unless you file it in a plan.
+- **Training plans.** **Add a training plan** asks what you're training for and when, then:
+  - **Import your workout files.** They go in in file-name order, and a file named `YYYY-MM-DD_name` goes on that day.
+  - **Build a plan for me.** A few questions (hours a week, the days you ride, your long-ride day, raise FTP, build endurance, or the event, whether all-round, climbing, time trial or criterium), then a week-by-week plan: base, build, specialty and a taper into your event, with a recovery week every fourth week and a ramp test to start. CrankHog builds it from its own workouts, or your AI plans the weeks and writes any workout the library is missing.
+  - **Start empty** and pick workouts from your library.
+
+  A plan is its workouts in order, the days you ride and a start date. Put it on the calendar, and every change re-lays it; workouts you've ridden stay where they were.
 - **A builder like zwofactory.com**, with blocks you can grab:
   - drag a block's edge to change its duration, or its top to change its power;
   - drag a block to reorder it;
@@ -149,7 +157,13 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **One rule.** No coach ever tells you to hurt yourself. Everything else is fair game, so pick the spice and the language with care. If your heart rate looks wrong, or you stop suddenly in a hard effort, every coach turns supportive.
 
 **Your history**
-- **A list or a calendar.** Every ride newest first, or a month at a time: each day's rides, days shaded by training load, and weekly hours and TSS.
+- **History.** Every ride newest first.
+- **The Calendar** (its own page in the sidebar). The whole month: today highlighted, past days greyed, done workouts green and missed ones red.
+  - **Moving and planning:** drag a planned workout to another day, plan any workout on a day with **Add to calendar**, or bring in what's planned on your intervals.icu calendar.
+  - **Events and days off:** click a day's number to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
+  - **Other sports:** runs, swims, squash and strength sessions show up too: from your Garmin's FIT files, from intervals.icu, or logged by hand. Each has a load on the same scale as ride TSS (hrTSS from heart rate, intervals.icu's load, or how hard you say it was).
+  - **Planning any sport:** click a day's number to plan a run, a swim or a squash game, or import planned sessions as text files named `YYYY-MM-DD_Name.txt`. The format is in [docs/WORKOUT-FORMAT.md](docs/WORKOUT-FORMAT.md) and the in-app **Format guide**. A planned session turns green when an activity of its sport lands on its day.
+  - **Beside each week:** planned against done time, load and sessions, split into Ride, Run, Swim and Other, with fitness, fatigue and form at the week's end, projected from your plan for the weeks ahead. Fitness counts every sport; the power curve and FTP stay rides only.
 - **Ride detail:** power, cadence, HR, speed and W′ balance charts, laps, time in zones, RPE and notes, and an AI debrief.
 - **Fitness:** the PMC (fitness, fatigue, form), weekly load, the power curve against your 90-day best, and FTP history.
 - **Fitness overview.** A plain-English read of those numbers: where your fitness is, the six-week trend, and whether your FTP needs a test. With AI on, your coach writes it, and **Ask the coach** takes it straight into the chat for questions.
@@ -191,7 +205,7 @@ npm run dev
 
 ### Updates
 
-From 0.5.0, the Mac app updates itself. It checks GitHub's releases a little after launch and every six hours, downloads a new version in the background, and installs it the next time you quit, or straight away from **Restart to update** in the sidebar. Nothing restarts during a ride. **Settings → About** has **Check for updates**, a switch to turn automatic updates off, and one for pre-releases (every 0.x release is one). The check only asks GitHub which release is newest; it sends nothing about you or your rides.
+From 0.5.0, the Mac app updates itself. It checks GitHub's releases a little after launch and every six hours, downloads a new version in the background, and installs it the next time you quit, or straight away from **Restart to update** in the sidebar. Nothing restarts during a ride. **Settings → About** has **Check for updates**, a switch to turn automatic updates off, and one for pre-releases (test builds published before a release; every release before 1.0 was one). The check only asks GitHub which release is newest; it sends nothing about you or your rides.
 
 0.4.0 and earlier can't update themselves: download 0.5.0 from [crankhog.app](https://crankhog.app) once, and it takes over from there.
 
@@ -253,6 +267,10 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 **Ride moments.** Every ride also saves two pictures next to its FIT file: your hardest 30 seconds, and a coach line picked at random, speech bubble included. They show the ride-along, the big numbers and the workout chart, like the shots Zwift adds to your post. Strava only lets partner apps attach photos, so CrankHog can't add them itself. The saved-ride card has **Copy** and **Open on Strava**, so adding one takes a paste. Turn them off in **Settings → Strava & sync**.
 
 **intervals.icu.** Paste your API key and athlete ID (from intervals.icu → Settings → Developer) in **Settings → Strava & sync**.
+- **Completed activities.** Turn on **Completed activities** there, and the runs, swims, squash games and outdoor rides your Garmin records show on the Calendar. They count in weekly volume by sport and in fitness. CrankHog checks at launch and every two hours, and the Calendar has **Refresh activities**.
+- **Garmin first.** Connect your Garmin to intervals.icu directly (on intervals.icu: Settings, Connections). Activities intervals.icu got from Strava can't be passed on, and CrankHog still never reads Strava itself.
+- **Kept out of the AI.** Activities from intervals.icu are never sent to the AI.
+- **Planned sessions to your watch.** Open a planned run or swim on the Calendar and press **Send to intervals.icu**. intervals.icu reads the steps and puts the workout on your Garmin, if your Garmin connection there allows planned workouts. Moving or removing the session in CrankHog changes it there too. **Import from intervals.icu** brings the runs and swims you plan there onto CrankHog's calendar.
 
 **Garmin Connect.** Drag a ride's FIT file into Garmin Connect's import page. There is no automatic upload.
 
@@ -262,7 +280,7 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 - **Grok (xAI):** an API key from [console.x.ai](https://console.x.ai).
 - **Ollama:** runs on your Mac with no key. Install it from [ollama.com](https://ollama.com) and pull a model.
 
-Keys are encrypted with your macOS Keychain and never reach the app's UI process. The AI only ever sees rides recorded on this Mac, never anything from Strava.
+Keys are encrypted with your macOS Keychain and never reach the app's UI process. The AI only ever sees rides recorded on this Mac: never anything from Strava, and never activities synced from intervals.icu.
 
 ## Your data
 
@@ -303,7 +321,7 @@ Ad-hoc signatures change on every build, so macOS forgets permission grants such
 
 The script checks both before it builds. Then it signs, notarizes and staples the app and the DMG, builds the zip and `latest-mac.yml` that the in-app updater installs from, and runs `spctl` the way Gatekeeper will. Notarization usually takes a few minutes. CI keeps building the ad-hoc DMG, because the certificate never leaves your Mac. To release:
 
-1. Merge the version bump and push the tag (`v0.5.0`). CI creates the GitHub release with its ad-hoc DMG.
+1. Merge the version bump and push the tag (`v0.5.0`). CI creates the GitHub release with its ad-hoc DMG. The bump carries the full notes in `docs/releases/v0.5.0.md` (CI puts them on the release) and a short entry in `src/core/whats-new/notes.ts`, which riders see once after the update; a test fails a bump without one.
 2. Run `npm run dist:signed -- --upload`. It replaces CI's DMG with the signed one and attaches the zip, its blockmap and `latest-mac.yml`. Once `latest-mac.yml` is on the release, installed copies (0.5.0 and later) find the update within six hours, or right away from **Settings → About → Check for updates**.
 
 If signing fails with "A timestamp was expected but was not found", `codesign` can't reach Apple's timestamp server. On some home routers that happens only over IPv6. Turn IPv6 off for the build (`sudo networksetup -setv6off Wi-Fi`, then `-setv6automatic Wi-Fi` afterwards) and run it again.

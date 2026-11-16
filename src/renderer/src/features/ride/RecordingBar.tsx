@@ -3,7 +3,7 @@ import { Circle, Flag, Pause, Play, Square, Trash2, Volume2, VolumeX } from 'luc
 import type { RidePlan } from '@core/ride/plan'
 import { useCoachTalk } from '../../coach/talk'
 import { getRuntime } from '../../runtime/composition'
-import { useRide } from '../../stores/ride'
+import { pushToast, useRide } from '../../stores/ride'
 import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
@@ -26,12 +26,13 @@ export function RecordingBar({ plan, startLabel = 'Start recording' }: { plan?: 
   const muted = useCoachTalk((s) => s.muted)
   const [confirm, setConfirm] = useState(false)
   const rt = getRuntime()
+  const waiting = state === 'waiting'
 
   if (!active) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-4 py-3 md:px-5">
         <div className="text-sm text-ink-dim">Not recording. Everything you do on the trainer still shows live.</div>
-        <Button variant="primary" onClick={() => void rt.rides.start({ plan: plan?.() })} data-testid="start-ride">
+        <Button variant="primary" onClick={() => void rt.rides.start({ plan: plan?.() }).catch((e: unknown) => pushToast({ tone: 'info', title: e instanceof Error ? e.message : String(e) }))} data-testid="start-ride">
           <Circle className="size-3.5 fill-current" /> {startLabel}
         </Button>
       </div>
@@ -41,8 +42,8 @@ export function RecordingBar({ plan, startLabel = 'Start recording' }: { plan?: 
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-accent/40 bg-accent/5 px-4 py-3 md:px-5" data-testid="recording-bar">
       <div className="flex items-center gap-2 text-sm font-semibold">
-        <span className={state === 'paused' ? 'size-2.5 rounded-full bg-warn' : 'size-2.5 animate-pulse rounded-full bg-bad'} />
-        {state === 'paused' ? 'Paused' : 'Recording'}
+        <span className={waiting ? 'size-2.5 rounded-full bg-ink-faint' : state === 'paused' ? 'size-2.5 rounded-full bg-warn' : 'size-2.5 animate-pulse rounded-full bg-bad'} />
+        <span data-testid="ride-state">{waiting ? 'Start pedaling to begin' : state === 'paused' ? 'Paused' : 'Recording'}</span>
       </div>
       <Stat label="Moving" value={formatDuration(moving)} testId="ride-moving" />
       <Stat label="Distance" value={`${formatLongDistanceFixed(distance, units, 2)} ${distanceUnit(units)}`} />
@@ -63,12 +64,17 @@ export function RecordingBar({ plan, startLabel = 'Start recording' }: { plan?: 
             Mute
           </Button>
         )}
-        <Button size="sm" onClick={() => rt.rides.command({ type: 'lap' })} title="Lap (L)">
+        <Button size="sm" disabled={waiting} onClick={() => rt.rides.command({ type: 'lap' })} title="Lap (L)">
           <Flag className="size-3.5" /> Lap
         </Button>
-        <Button size="sm" onClick={() => rt.rides.command({ type: 'togglePause' })} title="Pause/resume (Space)" data-testid="pause-ride">
-          {state === 'paused' ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-          {state === 'paused' ? 'Resume' : 'Pause'}
+        <Button
+          size="sm"
+          onClick={() => rt.rides.command({ type: 'togglePause' })}
+          title={waiting ? 'Start the clock without pedaling (Space)' : 'Pause/resume (Space)'}
+          data-testid="pause-ride"
+        >
+          {state === 'paused' || waiting ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+          {waiting ? 'Start now' : state === 'paused' ? 'Resume' : 'Pause'}
         </Button>
         <Button size="sm" variant="primary" disabled={saving} onClick={() => setConfirm(true)} data-testid="finish-ride">
           <Square className="size-3.5 fill-current" /> Finish

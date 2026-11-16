@@ -61,6 +61,13 @@ export function registerIntegrationHandlers(deps: {
     intervals.configure({ apiKey, athleteId: athleteId || '0' })
     return { ok: true }
   })
+  handle('intervals.planned', async ({ oldest, newest }) => ({ events: await intervals.plannedWorkouts(oldest, newest) }))
+  handle('intervals.activities', async ({ oldest, newest }) => intervals.activities(oldest, newest))
+  handle('intervals.putWorkout', async ({ eventId, workout }) => intervals.putPlannedWorkout(workout, eventId))
+  handle('intervals.deleteWorkout', async ({ eventId }) => {
+    await intervals.deletePlannedWorkout(eventId)
+    return { ok: true }
+  })
   handle('intervals.clear', () => {
     intervals.clear()
     return { ok: true }

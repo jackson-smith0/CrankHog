@@ -108,7 +108,8 @@ export type RideCommand = z.infer<typeof RideCommandSchema>
 
 /** Extra ride state shown by the mini-HUD / phone (null when not riding). */
 export interface LiveRide {
-  state: 'idle' | 'riding' | 'paused' | 'finished'
+  /** waiting: started, but the clock waits for the first pedal stroke. */
+  state: 'idle' | 'waiting' | 'riding' | 'paused' | 'finished'
   name: string
   elapsedS: number
   movingS: number

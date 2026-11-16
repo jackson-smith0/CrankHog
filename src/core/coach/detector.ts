@@ -293,7 +293,7 @@ export class TriggerDetector {
   /** Feed one engine tick. */
   tick(t: DetectorTick): CoachContext[] {
     const out: CoachContext[] = []
-    if (this.ended || t.state === 'ready' || t.state === 'finished') {
+    if (this.ended || t.state === 'ready' || t.state === 'waiting' || t.state === 'finished') {
       this.last = t
       return out
     }

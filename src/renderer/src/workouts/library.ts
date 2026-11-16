@@ -5,6 +5,7 @@ import { BUILTIN_WORKOUTS } from '@core/workout/builtins'
 import { compileWorkout, type Timeline } from '@core/workout/compile'
 import { FTP_TESTS } from '@core/workout/ftp-tests'
 import { parseErgMrcWithWarnings, toErg, toMrc } from '@core/workout/io/ergmrc'
+import { isSessionFile } from '@core/multisport/parse'
 import { parseIntervalsText, toIntervalsText } from '@core/workout/io/intervals-text'
 import { parseZwoWithWarnings, toZwo } from '@core/workout/io/zwo'
 import type { Workout, WorkoutFolder } from '@core/workout/model'
@@ -31,6 +32,18 @@ export interface LibraryEntry {
 }
 
 const cache = new Map<string, { json: string; ftpW: number; entry: Omit<LibraryEntry, 'favorite' | 'folder' | 'planOrder'> }>()
+
+/**
+ * A ramp test ends when the rider can't hold the target, so its full-length
+ * stats are fiction (every step would be about 90 minutes and hundreds of
+ * TSS). Planning totals count it as a typical test instead.
+ */
+export const RAMP_TEST_PLANNED = { durationS: 25 * 60, tss: 35 }
+
+/** Length and TSS for planning: as written, except a ramp test (see RAMP_TEST_PLANNED). */
+export function plannedStatsOf(w: Workout, stats: { durationS: number; tss: number | null }): { durationS: number; tss: number | null } {
+  return w.ftpTest?.protocol === 'ramp' ? RAMP_TEST_PLANNED : { durationS: stats.durationS, tss: stats.tss }
+}
 
 /** Compiles and scores a workout (memoized per workout content and FTP). */
 export function describeWorkout(workout: Workout, ftpW: number): Omit<LibraryEntry, 'favorite' | 'folder' | 'planOrder'> {
@@ -86,29 +99,6 @@ async function nextPlanOrder(): Promise<number> {
   return rows.reduce((m, r) => (r.json.folder === 'plan' ? Math.max(m, r.planOrder ?? 0) : m), 0) + 1
 }
 
-/** Files one of the rider's workouts in Custom workouts or the Training plan (at its end). */
-export async function moveToFolder(id: string, folder: WorkoutFolder): Promise<void> {
-  const row = await db().workouts.get(id)
-  if (!row) throw new Error('Only your own workouts can be moved. Copy a CrankHog workout to the builder first.')
-  const json: Workout = { ...row.json }
-  if (folder === 'plan') json.folder = 'plan'
-  else delete json.folder
-  const planOrder = folder === 'plan' ? (row.json.folder === 'plan' && row.planOrder !== undefined ? row.planOrder : await nextPlanOrder()) : undefined
-  await db().workouts.put({ ...row, json, planOrder, updatedAt: Date.now() })
-}
-
-/** Moves a Training plan workout one place earlier (-1) or later (+1). */
-export async function movePlanItem(id: string, by: -1 | 1): Promise<void> {
-  await db().transaction('rw', db().workouts, async () => {
-    const plan = (await db().workouts.toArray()).filter((r) => r.json.folder === 'plan').sort((a, b) => (a.planOrder ?? 0) - (b.planOrder ?? 0))
-    const i = plan.findIndex((r) => r.id === id)
-    const j = i + by
-    if (i < 0 || j < 0 || j >= plan.length) return
-    ;[plan[i], plan[j]] = [plan[j]!, plan[i]!]
-    await Promise.all(plan.map((r, k) => db().workouts.update(r.id, { planOrder: k + 1 })))
-  })
-}
-
 export async function deleteWorkout(id: string): Promise<void> {
   await db().workouts.delete(id)
 }
@@ -151,6 +141,8 @@ export function parseWorkoutFile(fileName: string, text: string): ImportResult {
     return { workout: { ...r.workout, source: 'import', name: r.workout.name || fileName.replace(/\.[^.]+$/, '') }, warnings: r.warnings }
   }
   if (ext === '.txt') {
+    // a run, swim or other session has its own importer (workouts/session-import.ts)
+    if (isSessionFile(text)) throw new Error('This is a run, swim or other session (it has a sport line), not a bike workout. Import it on the Calendar or the Run & swim tab.')
     // plain text has no name of its own: the file's name is the workout's
     const r = parseIntervalsText(text, { name: fileName.replace(/\.[^.]+$/, '') })
     if (r.workout.segments.length === 0) throw new Error(r.errors[0] ? `Line ${r.errors[0].line}: ${r.errors[0].message}` : 'No workout steps found.')

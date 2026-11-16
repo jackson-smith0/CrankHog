@@ -51,6 +51,12 @@ export const FuelingPrefsSchema = z.object({
   drinkEveryMin: z.number().min(5).max(60).default(15),
 })
 
+/** Interval countdown beeps (src/core/ride/countdown.ts): ticks before a step ends, a go as the next starts. Not muted with the coach. */
+export const BeepPrefsSchema = z.object({
+  enabled: z.boolean().default(true),
+  volume: z.number().min(0).max(1).default(0.6),
+})
+
 /** KICKR Headwind (or any smart fan driver): what drives its speed. */
 export const FanPrefsSchema = z.object({
   mode: z.enum(['off', 'fixed', 'hr', 'speed', 'power']).default('hr'),
@@ -85,9 +91,15 @@ export const JourneyPrefsSchema = z.object({
 export const UpdatePrefsSchema = z.object({
   /** Check at launch and every few hours, and download in the background. Installing waits for a restart or quit. */
   auto: z.boolean().default(true),
-  /** Take pre-releases too. Every 0.x release is a pre-release, so this is on by default. */
+  /** Take pre-releases too: test builds like 1.1.0-beta.1. On by default from before 1.0, when every release was one. */
   prereleases: z.boolean().default(true),
 })
+
+/** The numbers an uploaded ride's description can carry (core/ride/upload-text.ts has their text). */
+export const DESCRIPTION_STAT_IDS = ['avgPower', 'np', 'maxPower', 'avgHr', 'maxHr', 'avgCadence', 'kj', 'tss', 'if'] as const
+export const DescriptionStatSchema = z.enum(DESCRIPTION_STAT_IDS)
+export const DEFAULT_RIDE_DESCRIPTION = 'Cranked hog with CrankHog\n{stats}\nCrankHog.app'
+export const DEFAULT_DESCRIPTION_STATS = ['avgPower', 'avgHr', 'kj'] as const
 
 export const AppSettingsSchema = z.object({
   version: z.literal(1).default(1),
@@ -110,11 +122,23 @@ export const AppSettingsSchema = z.object({
   appearance: z.enum(['system', 'light', 'dark']).default('system'),
   /** Upload finished (non-simulated) rides automatically. */
   autoUpload: z.object({ strava: z.boolean().default(false), intervals: z.boolean().default(false) }).default({ strava: false, intervals: false }),
+  /** Bring completed activities (runs, swims, squash, outdoor rides) in from intervals.icu. Off until the rider turns it on. */
+  intervalsSync: z.object({ activities: z.boolean().default(false) }).default({ activities: false }),
   /** Capture the hardest effort and a coach line from each ride as images, saved next to its FIT file. */
   rideSnapshots: z.boolean().default(true),
+  /** The description on uploaded rides (core/ride/upload-text.ts): the rider's text, with {stats} for the numbers they tick. */
+  rideDescription: z
+    .object({
+      text: z.string().max(1000).default(DEFAULT_RIDE_DESCRIPTION),
+      stats: z.array(DescriptionStatSchema).max(DESCRIPTION_STAT_IDS.length).default([...DEFAULT_DESCRIPTION_STATS]),
+    })
+    .default({ text: DEFAULT_RIDE_DESCRIPTION, stats: [...DEFAULT_DESCRIPTION_STATS] }),
+  /** The version whose What's new the rider last saw: null on a new install, and in versions before What's new existed. */
+  whatsNewSeen: z.string().max(40).nullable().default(null),
   trainer: TrainerPrefsSchema.default(TrainerPrefsSchema.parse({})),
   coach: CoachPrefsSchema.default(CoachPrefsSchema.parse({})),
   fueling: FuelingPrefsSchema.default(FuelingPrefsSchema.parse({})),
+  beeps: BeepPrefsSchema.default(BeepPrefsSchema.parse({})),
   hud: HudPrefsSchema.default(HudPrefsSchema.parse({})),
   fan: FanPrefsSchema.default(FanPrefsSchema.parse({})),
   journeys: JourneyPrefsSchema.default(JourneyPrefsSchema.parse({})),
@@ -125,6 +149,7 @@ export type AppSettings = z.infer<typeof AppSettingsSchema>
 export type TrainerPrefs = z.infer<typeof TrainerPrefsSchema>
 export type CoachPrefs = z.infer<typeof CoachPrefsSchema>
 export type FuelingPrefs = z.infer<typeof FuelingPrefsSchema>
+export type BeepPrefs = z.infer<typeof BeepPrefsSchema>
 export type HudPrefs = z.infer<typeof HudPrefsSchema>
 export type FanPrefs = z.infer<typeof FanPrefsSchema>
 export type JourneyPrefs = z.infer<typeof JourneyPrefsSchema>

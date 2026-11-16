@@ -1,6 +1,11 @@
 // RideSession: one ride, from start to finish. Hooks into the engine tick,
 // records 1 Hz records, journals them for crash safety, keeps live metrics,
 // runs the plan (workout/route/test) and handles pauses and laps.
+//
+// start() only arms the ride ('waiting'): the trainer is told the plan's first
+// target but holds the paused load, and the clock, the recorder and the journal
+// wait for the first pedal stroke (or a manual start), so time spent getting on
+// the bike isn't ridden and ERG's soft start begins with the riding.
 import type { AthleteSnapshot, RideKind } from './types'
 import { scaledErgTarget, type TrainerController } from '../control/trainer-controller'
 import { COGGAN_POWER, HrDriftAccumulator, NormalizedPowerAccumulator, RollingMean, TimeInZones, WPrimeBalance, intensityFactor, trainingStressScore } from '../metrics'
@@ -12,7 +17,7 @@ import { IDLE_TICK, type PlanTick, type RescueOffer, type RidePlan, freeRidePlan
 import type { PlanLayer } from '../journeys/layer'
 import { RideRecorder, type RideRecord } from './recorder'
 
-export type SessionState = 'ready' | 'riding' | 'paused' | 'finished'
+export type SessionState = 'ready' | 'waiting' | 'riding' | 'paused' | 'finished'
 export type PauseReason = 'user' | 'auto' | 'system' | 'sensor-lost'
 
 export interface JournalSink {
@@ -56,6 +61,14 @@ export type SessionEvent =
 
 const AUTO_PAUSE_ZERO_MS = 3000
 const SENSOR_LOST_MS = 30_000
+/** While waiting, a stroke has to last this long to start the clock: a foot on a pedal or trainer noise doesn't. */
+const START_HOLD_MS = 2000
+/** Less than this is noise from the trainer, not someone pedaling. */
+const START_POWER_W = 20
+/** A bike without power or cadence starts on its wheel: about 7 km/h. */
+const START_SPEED_MPS = 2
+/** On a virtual road, a rider still rolling faster than this (about 3 km/h) is coasting, not stopped. */
+const ROLLING_MPS = 3 / 3.6
 const PR_DURATIONS = [5, 60, 300, 1200]
 
 export class RideSession {
@@ -69,7 +82,13 @@ export class RideSession {
   private startedAtWall = 0
   private zeroSince: number | null = null
   private silentSince: number | null = null
+  /** While waiting: when the stroke that may start the ride began (by its samples). */
+  private strokeSince: number | null = null
+  /** Events logged while waiting, journaled with the first stroke's time once the ride begins. */
+  private waitingEvents: JournalEvent[] = []
   private lastTick: PlanTick = IDLE_TICK
+  /** liveTick's copy of lastTick with the speed at 0, kept so a paused screen doesn't re-render every tick. */
+  private stoppedTick: { from: PlanTick; tick: PlanTick } | null = null
   private lastSegment: number | null = null
   private planFinished = false
   private readonly listeners = new Set<(e: SessionEvent) => void>()
@@ -126,6 +145,16 @@ export class RideSession {
   get planTick(): PlanTick {
     return this.lastTick
   }
+  /**
+   * The plan tick as the screen shows it: a waiting or paused ride stands
+   * still. The plan keeps its own speed and picks it up again on resume.
+   */
+  get liveTick(): PlanTick {
+    const t = this.lastTick
+    if ((this.state !== 'waiting' && this.state !== 'paused') || !t.speed) return t
+    if (this.stoppedTick?.from !== t) this.stoppedTick = { from: t, tick: { ...t, speed: 0 } }
+    return this.stoppedTick.tick
+  }
   get movingSeconds(): number {
     return this.recorder.movingSeconds
   }
@@ -138,12 +167,26 @@ export class RideSession {
     return () => this.listeners.delete(listener)
   }
 
+  /** Arms the ride: the trainer gets the first target, and the clock starts with the first pedal stroke. */
   start(): void {
     if (this.state !== 'ready') return
     const now = this.deps.clock.now()
-    this.startedAtMono = now
-    this.startedAtWall = this.deps.clock.wallMs(now)
-    this.recorder.start(now)
+    this.state = 'waiting'
+    // the paused load until the first stroke, so ERG doesn't ramp up under a rider who isn't there yet
+    this.deps.setPaused(true)
+    this.applyPlan(now, 0)
+    this.emit({ type: 'state', state: 'waiting' })
+    // already rolling when they pressed start: begin now, without letting the trainer go
+    if (this.strokeAt(now) !== null) this.beginRiding(now)
+  }
+
+  /** The ride really starts at `at`: the first pedal stroke, or the rider pressed start. */
+  private beginRiding(at: number): void {
+    if (this.state !== 'waiting') return
+    this.startedAtMono = at
+    this.startedAtWall = this.deps.clock.wallMs(at)
+    // the recorder catches up on the seconds since `at` (the hub keeps the samples)
+    this.recorder.start(at)
     this.state = 'riding'
     this.deps.setPaused(false)
     const meta = encodeMeta({
@@ -161,7 +204,9 @@ export class RideSession {
     this.journalStarted = this.deps.journal.begin(this.rideId, meta).catch((e: unknown) => {
       this.emit({ type: 'journal-error', message: String(e) })
     })
-    this.applyPlan(now, 0)
+    // what the rider did while waiting (a skip, a new mode) took effect as the ride began
+    for (const e of this.waitingEvents) this.journalEvent({ ...e, ts: this.startedAtWall })
+    this.waitingEvents = []
     this.emit({ type: 'state', state: 'riding' })
   }
 
@@ -176,6 +221,7 @@ export class RideSession {
   }
 
   resume(): void {
+    if (this.state === 'waiting') return this.beginRiding(this.deps.clock.now())
     if (this.state !== 'paused') return
     const now = this.deps.clock.now()
     // A pause requested mid-slot finishes that slot first.
@@ -192,10 +238,12 @@ export class RideSession {
 
   togglePause(): void {
     if (this.state === 'riding') this.pause('user')
-    else if (this.state === 'paused') this.resume()
+    else if (this.state === 'paused' || this.state === 'waiting') this.resume()
   }
 
   lap(): void {
+    // before the first stroke there is no lap to end
+    if (this.state !== 'riding' && this.state !== 'paused') return
     this.recorder.requestLap()
     this.logEvent('lap')
   }
@@ -230,7 +278,8 @@ export class RideSession {
         if (!this.plan.command?.(cmd, this.movingPrecise(now))) return
         this.logEvent('note', { command: cmd.type })
         // A new mode or level reaches the trainer (and the screen) now, not on the next tick.
-        if ((this.state === 'riding' || this.state === 'paused') && (cmd.type === 'mode' || cmd.type === 'nudge')) this.applyPlan(now, 0)
+        // While waiting there is no next tick, so a skip does too.
+        if (this.state === 'waiting' || ((this.state === 'riding' || this.state === 'paused') && (cmd.type === 'mode' || cmd.type === 'nudge'))) this.applyPlan(now, 0)
       }
     }
   }
@@ -246,8 +295,14 @@ export class RideSession {
     const hub = this.deps.hub
     const power = hub.value('power', now)
     const cadence = hub.value('cadence', now)
+    const speed = hub.value('speed', now)
 
-    if (this.options.autoPause) this.autoPause(now, power, cadence)
+    if (this.state === 'waiting') {
+      const since = this.firstStroke(now)
+      if (since === null) return
+      this.beginRiding(since)
+    }
+    if (this.options.autoPause) this.autoPause(now, power, cadence, speed)
     if (this.state === 'riding') this.applyPlan(now, 0.25)
     this.collect(now)
   }
@@ -255,6 +310,15 @@ export class RideSession {
   /** Stops the ride. Records up to now are kept; the journal is flushed and closed. */
   async finish(): Promise<{ records: RideRecord[]; events: JournalEvent[] }> {
     if (this.state === 'finished') return { records: this.records, events: this.events }
+    if (this.state === 'waiting') {
+      // never started: nothing was recorded and the journal was never begun
+      this.state = 'finished'
+      this.waitingEvents = []
+      this.deps.setPaused(false)
+      if (this.kind !== 'free') this.deps.controller.setDesired({ mode: 'idle' })
+      this.emit({ type: 'state', state: 'finished' })
+      return { records: this.records, events: this.events }
+    }
     const now = this.deps.clock.now()
     this.collect(now)
     this.recorder.pauseNow()
@@ -282,7 +346,7 @@ export class RideSession {
     return {
       state: this.state === 'ready' ? 'idle' : this.state,
       name: this.plan.name,
-      elapsedS: this.state === 'ready' ? 0 : Math.round((now - this.startedAtMono) / 1000),
+      elapsedS: this.state === 'ready' || this.state === 'waiting' ? 0 : Math.round((now - this.startedAtMono) / 1000),
       movingS: this.recorder.movingSeconds,
       segmentLabel: t.segmentLabel,
       segmentRemainingS: t.segmentRemainingS === null ? null : Math.max(0, Math.round(t.segmentRemainingS)),
@@ -357,7 +421,8 @@ export class RideSession {
     this.lastTick = tick
     if (tick.desired) this.deps.controller.setDesired(tick.desired)
     if (tick.segmentIndex !== null && tick.segmentIndex !== this.lastSegment) {
-      if (this.lastSegment !== null) this.recorder.requestLap()
+      // a skip while waiting just changes where the ride begins
+      if (this.lastSegment !== null && this.state !== 'waiting') this.recorder.requestLap()
       this.lastSegment = tick.segmentIndex
       this.logEvent('segment', { index: tick.segmentIndex, label: tick.segmentLabel })
       this.emit({ type: 'segment', index: tick.segmentIndex, label: tick.segmentLabel, kind: tick.segmentKind })
@@ -371,17 +436,56 @@ export class RideSession {
     }
   }
 
-  private autoPause(now: number, power: number | null, cadence: number | null): void {
-    const zero = power === 0 && (cadence === 0 || cadence === null)
-    const silent = power === null && cadence === null
+  private autoPause(now: number, power: number | null, cadence: number | null, speed: number | null): void {
+    // a bike with no power or cadence (a classic trainer's speed sensor) goes by its wheel
+    const cranks = power !== null || cadence !== null
+    // on a route or a journey the rider rolls on without pedalling, down a hill or slowing on the flat,
+    // so that isn't a stop until the virtual speed is down to a crawl
+    const t = this.lastTick
+    const rolling = t.freewheels === true && (t.speed ?? 0) >= ROLLING_MPS
+    const zero = !rolling && (cranks ? power === 0 && (cadence === 0 || cadence === null) : speed === 0)
+    const silent = !cranks && speed === null
     if (this.state === 'riding') {
       this.zeroSince = zero ? (this.zeroSince ?? now) : null
       this.silentSince = silent ? (this.silentSince ?? now) : null
       if (this.zeroSince !== null && now - this.zeroSince >= AUTO_PAUSE_ZERO_MS) this.pause('auto')
       else if (this.silentSince !== null && now - this.silentSince >= SENSOR_LOST_MS) this.pause('sensor-lost')
     } else if (this.state === 'paused' && (this.pausedBy === 'auto' || this.pausedBy === 'sensor-lost')) {
-      if ((power !== null && power > 0) || (cadence !== null && cadence > 0)) this.resume()
+      if ((power !== null && power > 0) || (cadence !== null && cadence > 0) || (!cranks && speed !== null && speed > 0)) this.resume()
     }
+  }
+
+  /**
+   * While waiting: when the first stroke began, once the rider has kept going
+   * for START_HOLD_MS. Measured on the samples' own times, so a value the hub
+   * is only holding (the trainer went quiet) can't run the hold out.
+   */
+  private firstStroke(now: number): number | null {
+    const at = this.strokeAt(now)
+    if (at === null) {
+      this.strokeSince = null
+      return null
+    }
+    this.strokeSince ??= at
+    return at - this.strokeSince >= START_HOLD_MS ? this.strokeSince : null
+  }
+
+  /**
+   * The time of the newest sample that says the rider is going, or null. The
+   * cranks (power, cadence) decide on a bike that has them, since a trainer's
+   * flywheel spins on after the rider stops; a bike without them goes by its wheel.
+   */
+  private strokeAt(now: number): number | null {
+    const hub = this.deps.hub
+    const power = hub.latest('power', now)
+    const cadence = hub.latest('cadence', now)
+    if (power === null && cadence === null) {
+      const speed = hub.latest('speed', now)
+      return speed !== null && speed.value >= START_SPEED_MPS ? speed.tMono : null
+    }
+    const p = power !== null && power.value >= START_POWER_W ? power.tMono : null
+    const c = cadence !== null && cadence.value > 0 ? cadence.tMono : null
+    return p === null ? c : c === null ? p : Math.max(p, c)
   }
 
   private collect(now: number): void {
@@ -440,6 +544,11 @@ export class RideSession {
 
   private logEvent(kind: Extract<JournalEvent, { type: 'event' }>['kind'], data?: Record<string, unknown>): void {
     const e: JournalEvent = { type: 'event', t: this.recorder.movingSeconds, ts: this.deps.clock.wallMs(), kind, data }
+    if (this.state === 'waiting') this.waitingEvents.push(e)
+    else this.journalEvent(e)
+  }
+
+  private journalEvent(e: JournalEvent): void {
     this.events.push(e)
     this.pendingLines.push(encodeEvent(e))
   }
