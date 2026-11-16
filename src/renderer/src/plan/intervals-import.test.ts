@@ -16,7 +16,7 @@ beforeEach(async () => {
 })
 
 describe('importFromIntervals', () => {
-  it('asks for last week and the next four, and schedules the rides it can play', async () => {
+  it('asks for last week and the next four, and schedules the rides it can play and the runs', async () => {
     invoke.mockResolvedValue({
       events: [
         { id: '5', start_date_local: '2026-11-16T00:00:00', name: 'Sweet spot', type: 'Ride', description: null, zwo: ZWO },
@@ -28,10 +28,14 @@ describe('importFromIntervals', () => {
     const r = await importFromIntervals(now)
     expect(invoke).toHaveBeenCalledWith('intervals.planned', { oldest: '2026-11-07', newest: '2026-12-12' })
     expect(IMPORT_DAYS_BACK + IMPORT_DAYS_AHEAD).toBe(35)
-    expect(r).toEqual({ added: 1, updated: 0, removed: 0, skipped: 2 })
+    expect(r).toEqual({ added: 2, updated: 0, removed: 0, skipped: 1 })
     const all = await listScheduled('2026-11-01', '2026-12-31')
-    expect(all.map((e) => [e.date, e.name, e.source])).toEqual([['2026-11-16', 'Sweet spot', 'intervals']])
+    expect(all.map((e) => [e.date, e.name, e.source, e.sport ?? 'ride'])).toEqual([
+      ['2026-11-16', 'Sweet spot', 'intervals', 'ride'],
+      ['2026-11-17', 'Long run', 'intervals', 'run'],
+    ])
     expect(all[0]!.workout?.segments.length).toBe(1)
+    expect(all[1]!.session).toEqual({ text: '- 60m Z2' })
   })
 
   it('passes on what went wrong, leaving the schedule as it was', async () => {

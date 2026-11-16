@@ -45,6 +45,8 @@ export const INVOKE_CHANNELS = [
   'intervals.clear',
   'intervals.planned',
   'intervals.activities',
+  'intervals.putWorkout',
+  'intervals.deleteWorkout',
   'uploads.enqueue',
   'uploads.list',
   'uploads.retry',

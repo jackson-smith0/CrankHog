@@ -6,7 +6,7 @@
 //
 // Days are local calendar dates ("2026-11-14"), never instants, so a plan
 // stays on its day across clock changes and when travelling.
-import type { SportGroup } from '../sport/group'
+import { groupOfIntervalsType, type SportGroup } from '../sport/group'
 import type { Effort } from '../sport/load'
 import type { Workout } from './model'
 import { parseIntervalsText } from './io/intervals-text'
@@ -35,7 +35,7 @@ export interface ScheduledWorkout {
   /** A session that isn't a bike workout: a run, a swim, a squash game, or a ride planned without steps. */
   session?: PlannedSession
   /** The intervals.icu event CrankHog sent this session as, so a move or removal can follow it there. */
-  pushedExternalId?: string
+  pushedEventId?: string
   createdAt: number
 }
 
@@ -186,9 +186,17 @@ export interface IntervalsPlannedEvent {
   description?: string
   /** The workout as a Zwift file, when intervals.icu could make one. */
   zwo?: string | null
+  /** "freegaz-plan-…" for a session CrankHog sent there itself. */
+  external_id?: string | null
+  /** Planned seconds and load, as intervals.icu works them out. */
+  moving_time?: number | null
+  icu_training_load?: number | null
 }
 
-export type IntervalsImport = { kind: 'ok'; entry: ScheduledWorkout } | { kind: 'skip'; reason: 'not a ride' | 'no date' | 'no workout steps' }
+export type IntervalsImport = { kind: 'ok'; entry: ScheduledWorkout } | { kind: 'skip'; reason: 'sent from CrankHog' | 'no date' | 'no workout steps' }
+
+/** The external id CrankHog sends a planned session to intervals.icu under. */
+export const pushedExternalId = (entryId: string): string => `freegaz-plan-${entryId.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80)}`
 
 const RIDE_TYPES = new Set(['Ride', 'VirtualRide'])
 
@@ -198,11 +206,22 @@ const RIDE_TYPES = new Set(['Ride', 'VirtualRide'])
  * structured workout); the text description is the fallback.
  */
 export function fromIntervalsEvent(ev: IntervalsPlannedEvent, now: number): IntervalsImport {
-  if (ev.type && !RIDE_TYPES.has(ev.type)) return { kind: 'skip', reason: 'not a ride' }
+  // a session CrankHog sent there is already on this calendar
+  if (ev.external_id?.startsWith('freegaz-plan-')) return { kind: 'skip', reason: 'sent from CrankHog' }
   const date = ev.start_date_local.slice(0, 10)
   if (!isDateKey(date)) return { kind: 'skip', reason: 'no date' }
   const id = `intervals:${ev.id}`
   const name = ev.name?.trim() || 'intervals.icu workout'
+  if (ev.type && !RIDE_TYPES.has(ev.type)) {
+    // a run, swim or anything else: a planned session with its steps as text
+    const sport = groupOfIntervalsType(ev.type)
+    const session: PlannedSession = {
+      ...(ev.description?.trim() ? { text: ev.description.trim() } : {}),
+      ...(ev.moving_time ? { durationS: ev.moving_time } : {}),
+      ...(ev.icu_training_load !== null && ev.icu_training_load !== undefined ? { load: ev.icu_training_load } : {}),
+    }
+    return { kind: 'ok', entry: { id, date, workoutId: null, workout: null, name, source: 'intervals', externalId: String(ev.id), sport, session, createdAt: now } }
+  }
   let workout: Workout | null = null
   if (ev.zwo) {
     try {
@@ -217,4 +236,23 @@ export function fromIntervalsEvent(ev: IntervalsPlannedEvent, now: number): Inte
   if (!workout || workout.segments.length === 0) return { kind: 'skip', reason: 'no workout steps' }
   workout = { ...workout, id, name, source: 'import' }
   return { kind: 'ok', entry: { id, date, workoutId: null, workout, name, source: 'intervals', externalId: String(ev.id), createdAt: now } }
+}
+
+/** What a sent session needs on intervals.icu after a change here: moved to another day, or gone. */
+export interface PushedChanges {
+  moved: { entryId: string; eventId: string; date: DateKey }[]
+  removed: { eventId: string }[]
+}
+
+/** Compares a day's sent sessions before and after a change (a move, a removal, a plan re-laid). */
+export function pushedChanges(before: readonly Pick<ScheduledWorkout, 'id' | 'date' | 'pushedEventId'>[], after: readonly Pick<ScheduledWorkout, 'id' | 'date'>[]): PushedChanges {
+  const now = new Map(after.map((e) => [e.id, e.date]))
+  const out: PushedChanges = { moved: [], removed: [] }
+  for (const e of before) {
+    if (!e.pushedEventId) continue
+    const date = now.get(e.id)
+    if (date === undefined) out.removed.push({ eventId: e.pushedEventId })
+    else if (date !== e.date) out.moved.push({ entryId: e.id, eventId: e.pushedEventId, date })
+  }
+  return out
 }

@@ -270,6 +270,7 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 - **Completed activities.** Turn on **Completed activities** there, and the runs, swims, squash games and outdoor rides your Garmin records show on the Calendar. They count in weekly volume by sport and in fitness. CrankHog checks at launch and every two hours, and the Calendar has **Refresh activities**.
 - **Garmin first.** Connect your Garmin to intervals.icu directly (on intervals.icu: Settings, Connections). Activities intervals.icu got from Strava can't be passed on, and CrankHog still never reads Strava itself.
 - **Kept out of the AI.** Activities from intervals.icu are never sent to the AI.
+- **Planned sessions to your watch.** Open a planned run or swim on the Calendar and press **Send to intervals.icu**. intervals.icu reads the steps and puts the workout on your Garmin, if your Garmin connection there allows planned workouts. Moving or removing the session in CrankHog changes it there too. **Import from intervals.icu** brings the runs and swims you plan there onto CrankHog's calendar.
 
 **Garmin Connect.** Drag a ride's FIT file into Garmin Connect's import page. There is no automatic upload.
 

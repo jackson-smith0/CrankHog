@@ -1,7 +1,7 @@
 // intervals.icu: personal API key (Basic auth, username "API_KEY").
 // Athlete id "0" means "the owner of this key".
 import type { SecretStore } from '../secrets/secret-store'
-import { requestJson } from './http'
+import { HttpError, requestJson, requestText } from './http'
 
 /** A planned ride from the athlete's intervals.icu calendar, trimmed to what CrankHog uses. */
 export interface PlannedWorkoutEvent {
@@ -14,6 +14,11 @@ export interface PlannedWorkoutEvent {
   description: string | null
   /** The workout as a Zwift file, when intervals.icu could make one. */
   zwo: string | null
+  /** The id the creator gave it; sessions CrankHog sent are "freegaz-plan-…". */
+  external_id: string | null
+  /** Planned seconds, as intervals.icu works it out. */
+  moving_time: number | null
+  icu_training_load: number | null
 }
 
 /** A completed activity from intervals.icu, trimmed to what the calendar uses. */
@@ -38,6 +43,21 @@ export interface IntervalsActivity {
   source: string | null
   /** The id the uploader gave it; CrankHog's own uploads are "freegaz-…". */
   external_id: string | null
+}
+
+/** A planned workout CrankHog sends to intervals.icu. */
+export interface PlannedWorkoutOut {
+  /** The local day, "2026-12-02". */
+  date: string
+  /** "Run", "Swim", "Ride", "Workout". */
+  type: string
+  name: string
+  /** The steps in intervals.icu's workout text (without CrankHog's header lines). */
+  description: string
+  /** "freegaz-plan-<entry id>": CrankHog's mark, so an import from intervals.icu skips it. */
+  externalId: string
+  movingTimeS?: number | null
+  load?: number | null
 }
 
 /** Longest calendar range one import may ask for. */
@@ -124,6 +144,53 @@ export class IntervalsClient {
     return { activities, fromStrava }
   }
 
+  /**
+   * Puts a planned workout on the athlete's intervals.icu calendar, or
+   * updates the one sent before (`eventId`). The description is the workout
+   * in intervals.icu's text; intervals.icu reads it into steps and, if the
+   * athlete allows it, sends it on to their Garmin. Returns the event's id.
+   * An event deleted on intervals.icu since is created again.
+   */
+  async putPlannedWorkout(w: PlannedWorkoutOut, eventId?: string): Promise<{ eventId: string }> {
+    const c = this.secrets.getJson<IntervalsConfig>(SECRET)
+    if (!c) throw new Error('intervals.icu is not configured')
+    if (!DATE.test(w.date)) throw new Error('Not a date')
+    const base = `${this.api}/athlete/${encodeURIComponent(c.athleteId || '0')}/events`
+    const body = JSON.stringify({
+      category: 'WORKOUT',
+      start_date_local: `${w.date}T00:00:00`,
+      type: w.type,
+      name: w.name,
+      description: w.description,
+      external_id: w.externalId,
+      ...(w.movingTimeS ? { moving_time: Math.round(w.movingTimeS) } : {}),
+      ...(w.load !== undefined && w.load !== null ? { icu_training_load: Math.round(w.load) } : {}),
+    })
+    const headers = { authorization: basicAuth(c.apiKey), 'content-type': 'application/json' }
+    if (eventId) {
+      try {
+        const res = await requestJson<{ id?: number | string }>(`${base}/${encodeURIComponent(eventId)}`, { method: 'PUT', headers, body })
+        return { eventId: String(res.id ?? eventId) }
+      } catch (e) {
+        if (!(e instanceof HttpError) || e.status !== 404) throw e
+      }
+    }
+    const res = await requestJson<{ id?: number | string }>(base, { method: 'POST', headers, body })
+    if (res.id === undefined || res.id === null) throw new Error('intervals.icu did not return an event id')
+    return { eventId: String(res.id) }
+  }
+
+  /** Takes a workout CrankHog sent off the athlete's intervals.icu calendar. One already gone counts as done. */
+  async deletePlannedWorkout(eventId: string): Promise<void> {
+    const c = this.secrets.getJson<IntervalsConfig>(SECRET)
+    if (!c) throw new Error('intervals.icu is not configured')
+    try {
+      await requestText(`${this.api}/athlete/${encodeURIComponent(c.athleteId || '0')}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE', headers: { authorization: basicAuth(c.apiKey) } })
+    } catch (e) {
+      if (!(e instanceof HttpError) || e.status !== 404) throw e
+    }
+  }
+
   async uploadFit(upload: { bytes: Uint8Array; fileName: string; name: string; description?: string; externalId: string }): Promise<{ activityId: string }> {
     const c = this.secrets.getJson<IntervalsConfig>(SECRET)
     if (!c) throw new Error('intervals.icu is not configured')
@@ -162,7 +229,7 @@ function toPlanned(raw: unknown): PlannedWorkoutEvent[] {
     const text = Buffer.from(file, 'base64').toString('utf8')
     zwo = text.length <= MAX_ZWO ? text : null
   }
-  return [{ id, start_date_local: start, name: (str(e.name, 300) ?? '').trim(), type: str(e.type, 40), description: str(e.description, MAX_TEXT), zwo }]
+  return [{ id, start_date_local: start, name: (str(e.name, 300) ?? '').trim(), type: str(e.type, 40), description: str(e.description, MAX_TEXT), zwo, external_id: str(e.external_id, 200), moving_time: num(e.moving_time, 86_400), icu_training_load: num(e.icu_training_load, 2000) }]
 }
 
 const num = (v: unknown, max: number): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? v : null)

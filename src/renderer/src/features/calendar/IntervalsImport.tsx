@@ -4,7 +4,7 @@ import { importFromIntervals } from '../../plan/intervals-import'
 import { bridge } from '../../platform/bridge'
 import { Button } from '../../ui/Button'
 
-/** Brings planned rides from the rider's intervals.icu calendar onto this one (Mac app, with an API key set up). */
+/** Brings planned rides, runs and swims from the rider's intervals.icu calendar onto this one (Mac app, with an API key set up). */
 export function IntervalsImport({ onNotice }: { onNotice: (n: { tone: 'good' | 'bad'; text: string }) => void }) {
   const [configured, setConfigured] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -29,7 +29,7 @@ export function IntervalsImport({ onNotice }: { onNotice: (n: { tone: 'good' | '
         text:
           changed === 0 && r.removed === 0
             ? 'Nothing planned on intervals.icu for the next four weeks.'
-            : `${changed} workout${changed === 1 ? '' : 's'} from intervals.icu${r.removed ? `, ${r.removed} removed` : ''}${r.skipped ? `. Skipped ${r.skipped} that aren't structured rides` : ''}.`,
+            : `${changed} workout${changed === 1 ? '' : 's'} from intervals.icu${r.removed ? `, ${r.removed} removed` : ''}${r.skipped ? `. Left out ${r.skipped}: rides without steps to play, and sessions sent from here` : ''}.`,
       })
     } catch (e) {
       onNotice({ tone: 'bad', text: `Couldn't import from intervals.icu: ${e instanceof Error ? e.message : String(e)}` })
@@ -38,7 +38,7 @@ export function IntervalsImport({ onNotice }: { onNotice: (n: { tone: 'good' | '
     }
   }
   return (
-    <Button size="sm" onClick={() => void run()} disabled={busy} data-testid="intervals-import" title="Last week and the next four weeks of planned rides">
+    <Button size="sm" onClick={() => void run()} disabled={busy} data-testid="intervals-import" title="Last week and the next four weeks of planned rides, runs, swims and other sessions">
       <CalendarArrowDown className="size-3.5" /> {busy ? 'Importing…' : 'Import from intervals.icu'}
     </Button>
   )

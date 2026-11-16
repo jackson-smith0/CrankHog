@@ -12,13 +12,14 @@ import type { SessionThresholds } from '@core/multisport/estimate'
 import { isSessionFile } from '@core/multisport/parse'
 import type { SessionWorkout } from '@core/multisport/model'
 import { activityGroup } from '@core/sport/group'
-import { addDays, completions, dateKey, dateKeyToMs, isBikeWorkout, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
+import { addDays, completions, dateKey, dateKeyToMs, isBikeWorkout, pushedChanges, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
 import type { Workout } from '@core/workout/model'
 import { currentFtp, DEFAULT_FTP_W } from '../db/athlete-repo'
 import { db } from '../db/db'
 import { BUILTINS, parseWorkoutFile, saveWorkout } from '../workouts/library'
 import { plannedFrom, saveSessionWorkout, sessionThresholds } from '../workouts/sessions-repo'
 import type { ImportLine } from '../workouts/session-import'
+import { followPushed } from './intervals-push'
 
 const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${crypto.randomUUID().slice(0, 8)}`
 
@@ -160,8 +161,11 @@ async function relay(plan: TrainingPlan): Promise<void> {
   const d = db()
   // read outside the transaction, which doesn't cover the profile
   const thresholds: SessionThresholds = plan.onCalendar && plan.items.some(isSessionItem) ? await sessionThresholds() : {}
+  let before: ScheduledWorkout[] = []
+  let after: ScheduledWorkout[] = []
   await d.transaction('rw', [d.schedule, d.rides, d.dayMarks, d.workouts, d.activities, d.sessionWorkouts], async () => {
     const mine = (await d.schedule.toArray()).filter((e) => e.planId === plan.id)
+    before = mine
     const workoutIds = [...new Set(mine.map((e) => e.workoutId).filter((x): x is string => !!x))]
     const rides = workoutIds.length > 0 ? await d.rides.where('workoutId').anyOf(workoutIds).toArray() : []
     // a run or swim in the plan is done by an activity on its day (a ride without a workout, by any ride)
@@ -177,6 +181,7 @@ async function relay(plan: TrainingPlan): Promise<void> {
     )
     const doneItems = new Set(mine.filter((e) => done.has(e.id)).map((e) => e.planItemId))
     await d.schedule.bulkDelete(mine.filter((e) => !done.has(e.id)).map((e) => e.id))
+    after = mine.filter((e) => done.has(e.id))
     if (!plan.onCalendar) return
 
     const marks = await d.dayMarks.toArray()
@@ -210,8 +215,15 @@ async function relay(plan: TrainingPlan): Promise<void> {
         }
         return { ...common, workoutId: item.workoutId, workout: null, name: names.get(item.workoutId) ?? 'Workout' }
       })
-    await d.schedule.bulkPut(entries)
+    // a session sent to intervals.icu keeps its event there
+    const sent = new Map(mine.filter((e) => e.pushedEventId).map((e) => [e.id, e.pushedEventId!]))
+    const kept = entries.map((e) => (sent.has(e.id) ? { ...e, pushedEventId: sent.get(e.id) } : e))
+    await d.schedule.bulkPut(kept)
+    after = [...after, ...kept]
   })
+  // and moves or goes there when the re-lay moved or dropped it here
+  const changes = pushedChanges(before, after)
+  if (changes.moved.length + changes.removed.length > 0) void followPushed(changes)
 }
 
 /** Re-lays every plan on the calendar (after an event or a day off changes). */

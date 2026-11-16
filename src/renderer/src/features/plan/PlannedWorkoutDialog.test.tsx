@@ -50,4 +50,16 @@ describe('PlannedWorkoutDialog', () => {
     expect(screen.queryByTestId('planned-ride')).toBeNull()
     expect(screen.getByText(/turns green once a run lands on its day/)).toBeTruthy()
   })
+
+  it('sends a planned run to intervals.icu when it is set up, and says it was sent', async () => {
+    const invoke = vi.fn(async (channel: string) => (channel === 'intervals.status' ? { configured: true } : { eventId: '55' }))
+    window.crankhog = { invoke, on: () => () => undefined, send: () => undefined } as unknown as typeof window.crankhog
+    const e = await scheduleSession('2026-11-18', 'run', 'Long run', { text: '- 90m Z2 HR', durationS: 5400 })
+    render(<PlannedWorkoutDialog entry={e} status="planned" onClose={() => undefined} />)
+    const send = await screen.findByTestId('planned-send')
+    await act(async () => fireEvent.click(send))
+    expect(await screen.findByTestId('planned-sent')).toBeTruthy()
+    expect((await db().schedule.get(e.id))!.pushedEventId).toBe('55')
+    window.crankhog = undefined as unknown as typeof window.crankhog
+  })
 })

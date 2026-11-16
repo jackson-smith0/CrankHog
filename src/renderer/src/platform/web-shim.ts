@@ -225,6 +225,10 @@ export function createWebShim(): CrankHogBridge {
     'intervals.planned': () => {
       throw new Error('Importing from intervals.icu needs the Mac app, which keeps your API key.')
     },
+    'intervals.putWorkout': () => {
+      throw new Error('Sending to intervals.icu needs the Mac app, which keeps your API key.')
+    },
+    'intervals.deleteWorkout': () => ({ ok: false }),
     'intervals.activities': () => {
       throw new Error('Activities from intervals.icu need the Mac app, which keeps your API key.')
     },

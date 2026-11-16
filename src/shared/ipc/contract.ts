@@ -218,6 +218,9 @@ export const invoke = {
             type: z.string().max(40).nullable(),
             description: z.string().max(20_000).nullable(),
             zwo: z.string().max(200_000).nullable(),
+            external_id: z.string().max(200).nullable().optional(),
+            moving_time: z.number().min(0).max(86_400).nullable().optional(),
+            icu_training_load: z.number().min(0).max(2000).nullable().optional(),
           }),
         )
         .max(400),
@@ -248,6 +251,24 @@ export const invoke = {
       fromStrava: z.number().int().min(0),
     }),
   },
+  /** Puts a planned run, swim or other session on intervals.icu (updating the one sent before), for it to send on to a Garmin. */
+  'intervals.putWorkout': {
+    req: z.object({
+      eventId: z.string().max(40).optional(),
+      workout: z.object({
+        date: LocalDay,
+        type: z.enum(['Ride', 'Run', 'Swim', 'Workout']),
+        name: z.string().min(1).max(200),
+        description: z.string().max(20_000),
+        externalId: z.string().regex(/^freegaz-plan-[A-Za-z0-9_-]{1,80}$/),
+        movingTimeS: z.number().min(0).max(86_400).nullable().optional(),
+        load: z.number().min(0).max(2000).nullable().optional(),
+      }),
+    }),
+    res: z.object({ eventId: z.string().max(40) }),
+  },
+  /** Takes a session CrankHog sent off the intervals.icu calendar. */
+  'intervals.deleteWorkout': { req: z.object({ eventId: z.string().min(1).max(40) }), res: Ok },
   'uploads.enqueue': {
     req: z.object({
       rideId: RideId,

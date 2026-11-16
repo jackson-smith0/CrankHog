@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Play, Trash2 } from 'lucide-react'
+import { Play, Send, Trash2 } from 'lucide-react'
 import { formatSportDistance } from '@core/sport/format'
 import { SPORT_GROUP_LABEL } from '@core/sport/group'
 import { EFFORT_LABEL } from '@core/sport/load'
 import { dateKeyToMs, entrySport, isBikeWorkout, isDateKey, type ScheduleStatus, type ScheduledWorkout } from '@core/workout/schedule'
+import { sendToIntervals } from '../../plan/intervals-push'
 import { moveScheduled, removeScheduled } from '../../plan/schedule-repo'
+import { bridge } from '../../platform/bridge'
 import { useRide } from '../../stores/ride'
 import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
@@ -48,6 +50,24 @@ export function PlannedWorkoutDialog({ entry, status, planName, onClose }: { ent
   const navigate = useNavigate()
   const riding = useRide((s) => s.active)
   const bike = isBikeWorkout(entry)
+  const [intervals, setIntervals] = useState(false)
+  const [sentId, setSentId] = useState(entry.pushedEventId ?? null)
+  useEffect(() => {
+    if (bike) return
+    let live = true
+    // no bridge (a test) or no key: no button
+    void Promise.resolve()
+      .then(() => bridge().invoke('intervals.status', {}))
+      .then((s) => live && setIntervals(s.configured))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [bike])
+  const send = () =>
+    act(async () => {
+      setSentId(await sendToIntervals(entry.id))
+    })
   const [date, setDate] = useState(entry.date)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -117,6 +137,20 @@ export function PlannedWorkoutDialog({ entry, status, planName, onClose }: { ent
         </Field>
         {entry.source === 'intervals' && <p className="text-xs text-ink-faint">From your intervals.icu calendar. The next import brings back what is planned there, so move or delete it there to keep the change.</p>}
         {entry.planId && <p className="text-xs text-ink-faint">Moved or removed, it stays that way when the plan changes. The plan keeps it, and can put it back on its own day.</p>}
+        {!bike && intervals && entry.source !== 'intervals' && (
+          <Field label="intervals.icu" hint="intervals.icu puts it on your Garmin if your Garmin connection there allows planned workouts. It reaches the watch only if intervals.icu read the steps: open it there once to check.">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={() => void send()} disabled={busy} data-testid="planned-send">
+                <Send className="size-3.5" /> {sentId ? 'Send again' : 'Send to intervals.icu'}
+              </Button>
+              {sentId && (
+                <span className="text-xs text-good" data-testid="planned-sent">
+                  Sent. Moving or removing it here changes it there too.
+                </span>
+              )}
+            </div>
+          </Field>
+        )}
         {!bike && <p className="text-xs text-ink-faint">It turns green once a {SPORT_GROUP_LABEL[entrySport(entry)].toLowerCase()} lands on its day: from a FIT file, from intervals.icu, or logged by hand.</p>}
         {bike && riding && <p className="text-xs text-ink-dim">Finish the ride in progress to start this one.</p>}
         {error && <p className="text-sm text-bad">{error}</p>}
