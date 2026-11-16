@@ -10,9 +10,17 @@ const alias = {
   '@renderer': resolve(__dirname, 'src/renderer/src'),
 }
 
+// CrankHog's own Google app (src/main/integrations/google-app.ts), from CI
+// secrets at build time. Without them, riders use their own Google app.
+const googleApp =
+  process.env.CRANKHOG_GOOGLE_CLIENT_ID && process.env.CRANKHOG_GOOGLE_CLIENT_SECRET
+    ? { clientId: process.env.CRANKHOG_GOOGLE_CLIENT_ID, clientSecret: process.env.CRANKHOG_GOOGLE_CLIENT_SECRET }
+    : null
+
 export default defineConfig({
   main: {
     resolve: { alias },
+    define: { __CRANKHOG_GOOGLE_APP__: JSON.stringify(googleApp) },
     build: {
       // Bundle main-process dependencies so the packaged app needs no
       // node_modules at all (electron-builder.yml excludes them). Native or

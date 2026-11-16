@@ -8,6 +8,7 @@ import { registerAppHandlers } from './ipc/app-handlers'
 import { registerDeviceHandlers } from './ipc/device-handlers'
 import { defaultExportDir, registerRideHandlers } from './ipc/ride-handlers'
 import { registerIntegrationHandlers } from './ipc/integration-handlers'
+import { registerGoogleHandlers } from './ipc/google-handlers'
 import { registerAiHandlers } from './ipc/ai-handlers'
 import { registerHudHandlers } from './ipc/hud-handlers'
 import { registerUpdateHandlers } from './ipc/update-handlers'
@@ -70,6 +71,11 @@ void app.whenReady().then(() => {
     userData: app.getPath('userData'),
     exportDir: () => settings.get().exportDir ?? defaultExportDir(),
     onStravaConnected: () => settings.patch({ autoUpload: { ...settings.get().autoUpload, strava: true } }),
+  })
+  registerGoogleHandlers({
+    secrets,
+    syncEnabled: () => settings.get().googleCalendar.enabled,
+    onConnected: () => settings.patch({ googleCalendar: { ...settings.get().googleCalendar, enabled: true } }),
   })
   registerAiHandlers({ secrets })
   registerHudHandlers(() => mainWindow)

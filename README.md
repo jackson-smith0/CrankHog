@@ -160,6 +160,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **History.** Every ride newest first.
 - **The Calendar** (its own page in the sidebar). The whole month: today highlighted, past days greyed, done workouts green and missed ones red.
   - **Moving and planning:** drag a planned workout to another day, plan any workout on a day with **Add to calendar**, or bring in what's planned on your intervals.icu calendar.
+  - **Google Calendar:** sign in with Google and your planned training shows up as all-day events in a calendar named CrankHog. Move or remove a workout here and Google follows within seconds.
   - **Events and days off:** click a day's number to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
   - **Other sports:** runs, swims, squash and strength sessions show up too: from your Garmin's FIT files, from intervals.icu, or logged by hand. Each has a load on the same scale as ride TSS (hrTSS from heart rate, intervals.icu's load, or how hard you say it was).
   - **Planning any sport:** click a day's number to plan a run, a swim or a squash game, or import planned sessions as text files named `YYYY-MM-DD_Name.txt`. The format is in [docs/WORKOUT-FORMAT.md](docs/WORKOUT-FORMAT.md) and the in-app **Format guide**. A planned session turns green when an activity of its sport lands on its day.
@@ -272,6 +273,15 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 - **Kept out of the AI.** Activities from intervals.icu are never sent to the AI.
 - **Planned sessions to your watch.** Open a planned run or swim on the Calendar and press **Send to intervals.icu**. intervals.icu reads the steps and puts the workout on your Garmin, if your Garmin connection there allows planned workouts. Moving or removing the session in CrankHog changes it there too. **Import from intervals.icu** brings the runs and swims you plan there onto CrankHog's calendar.
 
+**Google Calendar.** Open **Settings → Strava & sync** and press **Sign in with Google**.
+- **What you get.** CrankHog makes a calendar named CrankHog in your Google account and keeps it matching your plan: every planned workout and session from 30 days ago onward, as an all-day event with its length, TSS or load, and notes. Add, move, rename or remove one in CrankHog and Google follows within seconds, plans and intervals.icu imports included. Changes made while offline go across the next time CrankHog can reach Google.
+- **Only its own calendar.** CrankHog asks for permission to manage calendars it created, nothing else. Your other calendars and events are never read or touched. Events you add to the CrankHog calendar yourself are left alone.
+- **CrankHog is the plan.** Drag an event to another day in Google and it goes back to its day in CrankHog. Move it in CrankHog instead.
+- **Your own Google app.** Official builds carry CrankHog's own Google app, so you just sign in. A build without it (a local build, or a fork) shows a short setup: make a free Google Cloud project, enable the Calendar API, create a *Desktop app* OAuth client, and paste its client ID and secret.
+- **Signing out** revokes CrankHog's access. The CrankHog calendar stays in Google; delete it there if you no longer want it.
+- **One calendar per account.** Each Google account you sign in with keeps its own CrankHog calendar, and switching back reuses it. On a new Mac, restore your backup (**Settings → Data & backup**) before signing in and CrankHog carries on with the same calendar. Without the backup it makes a new one, and you can delete the old one in Google.
+- **A refused change doesn't hold up the rest.** If Google turns one event down, the others still go across, and Settings says which went wrong.
+
 **Garmin Connect.** Drag a ride's FIT file into Garmin Connect's import page. There is no automatic upload.
 
 **AI.** Open **Settings → AI** and pick one provider:
@@ -284,7 +294,7 @@ Keys are encrypted with your macOS Keychain and never reach the app's UI process
 
 ## Your data
 
-Everything stays on this Mac. Rides live in the app's database, plus a FIT file per ride in `~/Documents/CrankHog/Rides`; you can change that folder, for example to one in iCloud Drive for free sync. **Settings → Data & backup** saves or restores a full backup zip, or scans the FIT folder to rebuild your history on a new Mac. Nothing leaves the machine unless you connect Strava or intervals.icu, turn on an AI provider, or send a bug report. The update check asks GitHub for the newest release and sends no data of yours.
+Everything stays on this Mac. Rides live in the app's database, plus a FIT file per ride in `~/Documents/CrankHog/Rides`; you can change that folder, for example to one in iCloud Drive for free sync. **Settings → Data & backup** saves or restores a full backup zip, or scans the FIT folder to rebuild your history on a new Mac. Nothing leaves the machine unless you connect Strava, intervals.icu or Google Calendar, turn on an AI provider, or send a bug report. Google Calendar gets only the name, day and description of each planned session. The update check asks GitHub for the newest release and sends no data of yours.
 
 ## Reporting a bug
 
@@ -310,7 +320,7 @@ Ad-hoc signatures change on every build, so macOS forgets permission grants such
 
 ### Releasing a signed build
 
-`npm run dist` makes an ad-hoc signed DMG, which macOS blocks on first launch. `npm run dist:signed` makes the same DMG signed with a Developer ID, with the hardened runtime, notarized by Apple and stapled, so it opens with only the usual "downloaded from the Internet" prompt. It needs a paid Apple Developer Program membership, and two things set up once per Mac:
+`npm run dist` makes an ad-hoc signed DMG, which macOS blocks on first launch. `npm run dist:signed` makes the same DMG signed with a Developer ID, with the hardened runtime, notarized by Apple and stapled, so it opens with only the usual "downloaded from the Internet" prompt. It needs a paid Apple Developer Program membership, and three things set up once per Mac:
 
 1. **A Developer ID Application certificate** in your login keychain. Create it at [developer.apple.com → Certificates](https://developer.apple.com/account/resources/certificates/add) from a certificate request made in Keychain Access. Without Xcode, also install Apple's [Developer ID G2 intermediate](https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer), or the certificate shows as not valid. `security find-identity -v -p codesigning` should list it.
 2. **Notarization credentials** in a keychain profile named `crankhog` (set `CRANKHOG_NOTARY_PROFILE` to use another name). Make an app-specific password at [account.apple.com](https://account.apple.com), then run:
@@ -318,8 +328,19 @@ Ad-hoc signatures change on every build, so macOS forgets permission grants such
    ```bash
    xcrun notarytool store-credentials crankhog --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
    ```
+3. **CrankHog's Google app** (the client ID and secret riders sign in to Google Calendar with) in the keychain. Each command asks for the value, so it stays out of your shell history:
 
-The script checks both before it builds. Then it signs, notarizes and staples the app and the DMG, builds the zip and `latest-mac.yml` that the in-app updater installs from, and runs `spctl` the way Gatekeeper will. Notarization usually takes a few minutes. CI keeps building the ad-hoc DMG, because the certificate never leaves your Mac. To release:
+   ```bash
+   security add-generic-password -U -s crankhog-google -a client-id -w
+   ```
+
+   ```bash
+   security add-generic-password -U -s crankhog-google -a client-secret -w
+   ```
+
+   `CRANKHOG_GOOGLE_CLIENT_ID` and `CRANKHOG_GOOGLE_CLIENT_SECRET` override them. Without the app, the DMG would send every rider off to make their own Google Cloud project, so the script refuses to build, and it checks the built app really carries it.
+
+The script checks all three before it builds. Then it signs, notarizes and staples the app and the DMG, builds the zip and `latest-mac.yml` that the in-app updater installs from, and runs `spctl` the way Gatekeeper will. Notarization usually takes a few minutes. CI keeps building the ad-hoc DMG, because the certificate never leaves your Mac. To release:
 
 1. Merge the version bump and push the tag (`v0.5.0`). CI creates the GitHub release with its ad-hoc DMG. The bump carries the full notes in `docs/releases/v0.5.0.md` (CI puts them on the release) and a short entry in `src/core/whats-new/notes.ts`, which riders see once after the update; a test fails a bump without one.
 2. Run `npm run dist:signed -- --upload`. It replaces CI's DMG with the signed one and attaches the zip, its blockmap and `latest-mac.yml`. Once `latest-mac.yml` is on the release, installed copies (0.5.0 and later) find the update within six hours, or right away from **Settings → About → Check for updates**.

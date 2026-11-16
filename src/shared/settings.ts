@@ -124,6 +124,8 @@ export const AppSettingsSchema = z.object({
   autoUpload: z.object({ strava: z.boolean().default(false), intervals: z.boolean().default(false) }).default({ strava: false, intervals: false }),
   /** Bring completed activities (runs, swims, squash, outdoor rides) in from intervals.icu. Off until the rider turns it on. */
   intervalsSync: z.object({ activities: z.boolean().default(false) }).default({ activities: false }),
+  /** Mirror planned training into a CrankHog calendar in Google (src/core/calendar-mirror). Turns on when the rider signs in with Google. */
+  googleCalendar: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   /** Capture the hardest effort and a coach line from each ride as images, saved next to its FIT file. */
   rideSnapshots: z.boolean().default(true),
   /** The description on uploaded rides (core/ride/upload-text.ts): the rider's text, with {stats} for the numbers they tick. */
