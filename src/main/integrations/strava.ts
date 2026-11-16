@@ -5,11 +5,9 @@
 // CrankHog only ever UPLOADS; it never reads Strava data, which keeps it clear
 // of the API agreement's AI/analytics restrictions.
 import { randomBytes } from 'node:crypto'
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import type { SecretStore } from '../secrets/secret-store'
-import { BRAND_COLORS, wordmarkSvg } from '@shared/brand'
 import { HttpError, requestJson } from './http'
+import { listenForCode } from './oauth-loopback'
 
 export interface StravaEndpoints {
   /** Where the user's browser is sent to authorize. */
@@ -91,7 +89,13 @@ export class StravaClient {
     const app = this.app()
     if (!app) throw new Error('Add your Strava API app Client ID and Secret first')
     const state = randomBytes(24).toString('hex')
-    const { server, port, code } = await listenForCode(state, timeoutMs)
+    const { server, port, code } = await listenForCode({
+      path: '/strava/callback',
+      expectedState: state,
+      timeoutMs,
+      provider: 'Strava',
+      successMessage: 'Strava connected. You can close this tab and get back on the bike.',
+    })
     try {
       const redirect = `http://127.0.0.1:${port}/strava/callback`
       const url = new URL(this.endpoints.authorize)
@@ -195,39 +199,4 @@ function interpret(s: UploadStatus): { activityId: string; duplicate: boolean } 
 function toTokens(r: TokenResponse): StravaTokens {
   const name = [r.athlete?.firstname, r.athlete?.lastname].filter(Boolean).join(' ') || undefined
   return { accessToken: r.access_token, refreshToken: r.refresh_token, expiresAt: r.expires_at, athleteName: name, athleteId: r.athlete?.id }
-}
-
-/** One-shot loopback HTTP listener for the OAuth redirect. */
-function listenForCode(expectedState: string, timeoutMs: number): Promise<{ server: Server; port: number; code: Promise<string> }> {
-  return new Promise((resolveListen, rejectListen) => {
-    let settle: { resolve: (c: string) => void; reject: (e: Error) => void } | null = null
-    const code = new Promise<string>((resolve, reject) => {
-      settle = { resolve, reject }
-    })
-    const server = createServer((req, res) => {
-      const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-      if (url.pathname !== '/strava/callback') {
-        res.writeHead(404).end()
-        return
-      }
-      const err = url.searchParams.get('error')
-      const state = url.searchParams.get('state')
-      const c = url.searchParams.get('code')
-      const ok = !err && state === expectedState && !!c
-      res.writeHead(ok ? 200 : 400, { 'content-type': 'text/html; charset=utf-8' })
-      res.end(page(ok ? 'Strava connected. You can close this tab and get back on the bike.' : 'Strava authorization failed. Close this tab and try again from CrankHog.'))
-      if (ok) settle?.resolve(c!)
-      else settle?.reject(new Error(err ? `Strava authorization ${err}` : 'OAuth state mismatch'))
-    })
-    const timer = setTimeout(() => settle?.reject(new Error('Timed out waiting for Strava authorization')), timeoutMs)
-    code.finally(() => clearTimeout(timer)).catch(() => undefined)
-    server.on('error', rejectListen)
-    server.listen(0, '127.0.0.1', () => {
-      resolveListen({ server, port: (server.address() as AddressInfo).port, code })
-    })
-  })
-}
-
-function page(message: string): string {
-  return `<!doctype html><meta charset="utf-8"><title>CrankHog</title><body style="font:16px -apple-system,sans-serif;background:${BRAND_COLORS.night};color:${BRAND_COLORS.chalk};display:grid;place-items:center;align-content:center;gap:20px;height:100vh;margin:0">${wordmarkSvg(BRAND_COLORS.chalk, 'style="height:40px;width:auto"')}<p>${message}</p></body>`
 }

@@ -11,7 +11,7 @@ an iPhone can drive a KICKR and read a heart-rate strap. No iPhone browser can.
 | Trainer and sensors | Web Bluetooth | **CoreBluetooth** | Android Chrome only |
 | Rides, workouts, journeys, history | yes | yes | yes |
 | FIT files | `~/Documents/CrankHog/Rides` | Files → On My iPhone → CrankHog → Rides | downloads |
-| Strava, intervals.icu, AI | yes | not yet (keys need a safe store) | no |
+| Strava, intervals.icu, Google Calendar, AI | yes | not yet (keys need a safe store) | no |
 | Ride moments (pictures) | yes | no (no window capture) | no |
 | The Donald and Bibi | yes | hidden for now | yes |
 | Demo mode (simulated trainer) | `CRANKHOG_SIM=1` | Devices → Try demo mode | Devices → Try demo mode |

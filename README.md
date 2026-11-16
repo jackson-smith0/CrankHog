@@ -160,6 +160,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **History.** Every ride newest first.
 - **The Calendar** (its own page in the sidebar). The whole month: today highlighted, past days greyed, done workouts green and missed ones red.
   - **Moving and planning:** drag a planned workout to another day, plan any workout on a day with **Add to calendar**, or bring in what's planned on your intervals.icu calendar.
+  - **Google Calendar:** sign in with Google and your planned training shows up as all-day events in a calendar named CrankHog. Move or remove a workout here and Google follows within seconds.
   - **Events and days off:** click a day's number to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
   - **Other sports:** runs, swims, squash and strength sessions show up too: from your Garmin's FIT files, from intervals.icu, or logged by hand. Each has a load on the same scale as ride TSS (hrTSS from heart rate, intervals.icu's load, or how hard you say it was).
   - **Planning any sport:** click a day's number to plan a run, a swim or a squash game, or import planned sessions as text files named `YYYY-MM-DD_Name.txt`. The format is in [docs/WORKOUT-FORMAT.md](docs/WORKOUT-FORMAT.md) and the in-app **Format guide**. A planned session turns green when an activity of its sport lands on its day.
@@ -272,6 +273,13 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 - **Kept out of the AI.** Activities from intervals.icu are never sent to the AI.
 - **Planned sessions to your watch.** Open a planned run or swim on the Calendar and press **Send to intervals.icu**. intervals.icu reads the steps and puts the workout on your Garmin, if your Garmin connection there allows planned workouts. Moving or removing the session in CrankHog changes it there too. **Import from intervals.icu** brings the runs and swims you plan there onto CrankHog's calendar.
 
+**Google Calendar.** Open **Settings → Strava & sync** and press **Sign in with Google**.
+- **What you get.** CrankHog makes a calendar named CrankHog in your Google account and keeps it matching your plan: every planned workout and session from 30 days ago onward, as an all-day event with its length, TSS or load, and notes. Add, move, rename or remove one in CrankHog and Google follows within seconds, plans and intervals.icu imports included. Changes made while offline go across the next time CrankHog can reach Google.
+- **Only its own calendar.** CrankHog asks for permission to manage calendars it created, nothing else. Your other calendars and events are never read or touched. Events you add to the CrankHog calendar yourself are left alone.
+- **CrankHog is the plan.** Drag an event to another day in Google and it goes back to its day in CrankHog. Move it in CrankHog instead.
+- **Your own Google app.** A build without CrankHog's built-in Google app shows a short setup: make a free Google Cloud project, enable the Calendar API, create a *Desktop app* OAuth client, and paste its client ID and secret.
+- **Signing out** revokes CrankHog's access. The CrankHog calendar stays in Google; delete it there if you no longer want it.
+
 **Garmin Connect.** Drag a ride's FIT file into Garmin Connect's import page. There is no automatic upload.
 
 **AI.** Open **Settings → AI** and pick one provider:
@@ -284,7 +292,7 @@ Keys are encrypted with your macOS Keychain and never reach the app's UI process
 
 ## Your data
 
-Everything stays on this Mac. Rides live in the app's database, plus a FIT file per ride in `~/Documents/CrankHog/Rides`; you can change that folder, for example to one in iCloud Drive for free sync. **Settings → Data & backup** saves or restores a full backup zip, or scans the FIT folder to rebuild your history on a new Mac. Nothing leaves the machine unless you connect Strava or intervals.icu, turn on an AI provider, or send a bug report. The update check asks GitHub for the newest release and sends no data of yours.
+Everything stays on this Mac. Rides live in the app's database, plus a FIT file per ride in `~/Documents/CrankHog/Rides`; you can change that folder, for example to one in iCloud Drive for free sync. **Settings → Data & backup** saves or restores a full backup zip, or scans the FIT folder to rebuild your history on a new Mac. Nothing leaves the machine unless you connect Strava, intervals.icu or Google Calendar, turn on an AI provider, or send a bug report. Google Calendar gets only the name, day and description of each planned session. The update check asks GitHub for the newest release and sends no data of yours.
 
 ## Reporting a bug
 
