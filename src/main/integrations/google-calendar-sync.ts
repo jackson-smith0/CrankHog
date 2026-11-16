@@ -82,6 +82,7 @@ export class GoogleCalendarSync {
         this.last = { lastSyncAt: this.timers.now(), eventCount }
       } catch (e) {
         this.last = { ...this.last, lastError: message(e) }
+        console.warn(`[google] calendar sync failed: ${e instanceof HttpError ? `${e.status} ${googleReason(e.body) ?? ''}`.trim() : message(e)}`)
         if (isRetryable(e)) {
           this.pending ??= snap
           const wait = backoffMs(this.attempt++, e instanceof HttpError ? e.retryAfterS : null)
@@ -132,8 +133,24 @@ export class GoogleCalendarSync {
 function message(e: unknown): string {
   if (e instanceof HttpError) {
     if (e.status === 0) return 'Couldn’t reach Google. CrankHog will try again.'
+    if (e.status >= 500) return 'Google Calendar had a problem. CrankHog will try again shortly.'
     if (isRetryable(e)) return 'Google asked CrankHog to slow down. It will try again shortly.'
-    return `Google Calendar refused the change (${e.status}).`
+    const reason = googleReason(e.body)
+    return reason ? `Google Calendar refused the change: ${reason}` : `Google Calendar refused the change (${e.status}).`
   }
   return e instanceof Error ? e.message : String(e)
+}
+
+const REASON_MAX = 200
+
+/** Google's own words from an error body (`{ error: { message } }`), trimmed, or null when there are none. */
+export function googleReason(body: string): string | null {
+  try {
+    const m = (JSON.parse(body) as { error?: { message?: unknown } }).error?.message
+    if (typeof m !== 'string' || !m.trim()) return null
+    const one = m.trim().replace(/\s+/g, ' ')
+    return one.length > REASON_MAX ? `${one.slice(0, REASON_MAX - 1)}…` : one
+  } catch {
+    return null
+  }
 }

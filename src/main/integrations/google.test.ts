@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { googleEventId, type MirrorEvent } from '@core/calendar-mirror/mirror'
 import { SecretStore, type Cipher } from '../secrets/secret-store'
 import { CALENDAR_SCOPE, GoogleAuthError, GoogleClient, type GoogleEndpoints } from './google'
-import { GoogleCalendarSync, type SyncTimers } from './google-calendar-sync'
+import { GoogleCalendarSync, googleReason, type SyncTimers } from './google-calendar-sync'
 
 const plainCipher: Cipher = { isAvailable: () => true, encrypt: (s) => Buffer.from(s, 'utf8'), decrypt: (b) => b.toString('utf8') }
 const APP = { clientId: '1234-abcdefgh.apps.googleusercontent.com', clientSecret: 'GOCSPX-fake-xxxxxxxxxxxxxxxx' }
@@ -287,9 +287,9 @@ describe('the CrankHog calendar', () => {
   it('doesn’t retry a refusal, and the next snapshot tries again', async () => {
     const { timers, pending } = manualTimers()
     const sync = new GoogleCalendarSync(await signedIn(), undefined, timers)
-    state.failNext = { status: 400, count: 1 }
+    state.failNext = { status: 403, count: 1, body: JSON.stringify({ error: { code: 403, message: 'Google Calendar API has not been used in project 123 before or it is disabled.', errors: [{ reason: 'accessNotConfigured' }] } }) }
     await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
-    expect(sync.status().lastError).toMatch(/refused/)
+    expect(sync.status().lastError).toBe('Google Calendar refused the change: Google Calendar API has not been used in project 123 before or it is disabled.')
     expect(pending).toHaveLength(0)
     await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
     expect(events()).toHaveLength(1)
@@ -308,5 +308,22 @@ describe('the CrankHog calendar', () => {
     const sync = new GoogleCalendarSync(client())
     await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
     expect(sync.status()).toMatchObject({ connected: false, lastError: 'Sign in with Google first.' })
+  })
+})
+
+describe('Google’s reasons', () => {
+  it('come from the error body, trimmed to one short line, or not at all', () => {
+    expect(googleReason(JSON.stringify({ error: { message: '  Not\n allowed  ' } }))).toBe('Not allowed')
+    expect(googleReason(JSON.stringify({ error: { message: 'x'.repeat(500) } }))!.length).toBe(200)
+    expect(googleReason('<html>Bad gateway</html>')).toBeNull()
+    expect(googleReason('{"error":{}}')).toBeNull()
+  })
+
+  it('fall back to the status when the body has none', async () => {
+    const { timers } = { timers: { set: () => 0, clear: () => undefined, now: () => 1 } satisfies SyncTimers }
+    const sync = new GoogleCalendarSync(await signedIn(), undefined, timers)
+    state.failNext = { status: 400, count: 1, body: 'not json' }
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
+    expect(sync.status().lastError).toBe('Google Calendar refused the change (400).')
   })
 })
