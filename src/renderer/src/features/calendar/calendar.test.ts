@@ -87,6 +87,18 @@ describe('calendarMonth: other sports and day marks', () => {
     expect(sep3.activities.map((a) => a.id)).toEqual(['a', 'b'])
   })
 
+  it('shows a planned run as done by the run on its day, and a planned swim with no swim as still planned', () => {
+    const schedule = [
+      { id: 'pr', date: '2026-09-03', workoutId: null, workout: null, name: 'Easy run', source: 'manual' as const, sport: 'run' as const, session: { durationS: 1800 }, createdAt: 1 },
+      { id: 'ps', date: '2026-09-03', workoutId: null, workout: null, name: 'Swim', source: 'manual' as const, sport: 'swim' as const, session: { distanceM: 2000 }, createdAt: 2 },
+    ]
+    const m = calendarMonth(2026, 8, { rides: [], schedule, activities: [run('a', new Date(2026, 8, 3, 7).getTime())], now: new Date(2026, 8, 10).getTime() })
+    const sep3 = m.weeks.flatMap((w) => w.days).find((d) => d.inMonth && d.day === 3)!
+    expect(sep3.plannedActivityIds).toEqual(['a'])
+    expect(sep3.planned.map((p) => [p.entry.id, p.status])).toEqual([['ps', 'missed']])
+    expect(m.planned).toBe(2)
+  })
+
   it('puts events and days off on their day', () => {
     const marks: DayMark[] = [{ id: 'e', date: '2026-09-20', kind: 'event', name: 'Gran fondo', priority: 'A' }, { id: 't', date: '2026-09-21', kind: 'travel' }]
     const m = calendarMonth(2026, 8, { rides: [], marks })

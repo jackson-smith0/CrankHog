@@ -42,4 +42,53 @@ describe('DayDialog', () => {
     await act(async () => fireEvent.click(screen.getByTestId('day-mark-add')))
     await waitFor(async () => expect((await db().dayMarks.toArray()).map((m) => m.kind)).toEqual(['travel']))
   })
+
+  const today = () => {
+    const now = new Date()
+    return calendarMonth(now.getFullYear(), now.getMonth(), { rides: [] }).weeks.flatMap((w) => w.days).find((d) => d.isToday)!
+  }
+  const future = () => calendarMonth(2099, 0, { rides: [] }).weeks.flatMap((w) => w.days).find((d) => d.inMonth && d.day === 15)!
+
+  it('logs a squash game on a day that has been, with its load from how hard it was', async () => {
+    const onClose = vi.fn()
+    render(<DayDialog day={today()} onClose={onClose} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'Log an activity' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Other' }))
+    fireEvent.change(screen.getByTestId('log-label'), { target: { value: 'Squash' } })
+    fireEvent.change(screen.getByTestId('log-time'), { target: { value: '1:00' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Hard' }))
+    await act(async () => fireEvent.click(screen.getByTestId('day-log-add')))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(await db().activities.toArray()).toEqual([expect.objectContaining({ name: 'Squash', group: 'other', source: 'manual', movingS: 3600, manualLoad: 80 })])
+  })
+
+  it('wants a time to log an activity', async () => {
+    render(<DayDialog day={today()} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'Log an activity' }))
+    await act(async () => fireEvent.click(screen.getByTestId('day-log-add')))
+    expect(screen.getByText(/Fill in the time/)).toBeTruthy()
+    expect(await db().activities.count()).toBe(0)
+  })
+
+  it('plans a run on a day ahead, and only lets you log on days that have been', async () => {
+    const onClose = vi.fn()
+    render(<DayDialog day={future()} onClose={onClose} />)
+    expect(screen.queryByRole('radio', { name: 'Log an activity' })).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: 'Plan a session' }))
+    fireEvent.change(screen.getByTestId('plan-distance'), { target: { value: '10 km' } })
+    fireEvent.change(screen.getByTestId('plan-time'), { target: { value: '50' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Easy' }))
+    await act(async () => fireEvent.click(screen.getByTestId('day-plan-add')))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    const [e] = await db().schedule.toArray()
+    expect(e).toMatchObject({ date: '2099-01-15', sport: 'run', name: 'Run', workoutId: null, workout: null, session: { durationS: 3000, distanceM: 10_000, effort: 'easy', load: 33.3 } })
+  })
+
+  it('says what is wrong with a time it can’t read', async () => {
+    render(<DayDialog day={future()} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'Plan a session' }))
+    fireEvent.change(screen.getByTestId('plan-time'), { target: { value: 'soon' } })
+    await act(async () => fireEvent.click(screen.getByTestId('day-plan-add')))
+    expect(screen.getByText(/Time: write minutes/)).toBeTruthy()
+  })
 })

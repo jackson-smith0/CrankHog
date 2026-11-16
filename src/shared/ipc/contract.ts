@@ -218,11 +218,57 @@ export const invoke = {
             type: z.string().max(40).nullable(),
             description: z.string().max(20_000).nullable(),
             zwo: z.string().max(200_000).nullable(),
+            external_id: z.string().max(200).nullable().optional(),
+            moving_time: z.number().min(0).max(86_400).nullable().optional(),
+            icu_training_load: z.number().min(0).max(2000).nullable().optional(),
           }),
         )
         .max(400),
     }),
   },
+  /** Completed activities on intervals.icu, local dates both included (at most 92 days). Ones it got from Strava are only counted. */
+  'intervals.activities': {
+    req: z.object({ oldest: LocalDay, newest: LocalDay }),
+    res: z.object({
+      activities: z
+        .array(
+          z.object({
+            id: z.string().max(40),
+            start_date_local: z.string().max(40),
+            start_date: z.string().max(40).nullable(),
+            type: z.string().max(40).nullable(),
+            name: z.string().max(300),
+            moving_time: z.number().min(0).max(7 * 86_400),
+            distance: z.number().min(0).max(2_000_000).nullable(),
+            average_heartrate: z.number().min(0).max(260).nullable(),
+            max_heartrate: z.number().min(0).max(260).nullable(),
+            icu_training_load: z.number().min(0).max(2000).nullable(),
+            source: z.string().max(40).nullable(),
+            external_id: z.string().max(200).nullable(),
+          }),
+        )
+        .max(1000),
+      fromStrava: z.number().int().min(0),
+    }),
+  },
+  /** Puts a planned run, swim or other session on intervals.icu (updating the one sent before), for it to send on to a Garmin. */
+  'intervals.putWorkout': {
+    req: z.object({
+      eventId: z.string().max(40).optional(),
+      workout: z.object({
+        date: LocalDay,
+        type: z.enum(['Ride', 'Run', 'Swim', 'Workout']),
+        name: z.string().min(1).max(200),
+        description: z.string().max(20_000),
+        externalId: z.string().regex(/^freegaz-plan-[A-Za-z0-9_-]{1,80}$/),
+        movingTimeS: z.number().min(0).max(86_400).nullable().optional(),
+        load: z.number().min(0).max(2000).nullable().optional(),
+      }),
+    }),
+    res: z.object({ eventId: z.string().max(40) }),
+  },
+  /** Takes a session CrankHog sent off the intervals.icu calendar. */
+  'intervals.deleteWorkout': { req: z.object({ eventId: z.string().min(1).max(40) }), res: Ok },
   'uploads.enqueue': {
     req: z.object({
       rideId: RideId,

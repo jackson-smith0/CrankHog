@@ -17,15 +17,17 @@ const SLOT = ['--color-cadence', '--color-power', '--color-speed'] as const
 
 export function FitnessPage() {
   const rideCount = useLiveQuery(() => db().rides.count(), [])
-  const pmc = useLiveQuery(() => pmcSeries(180), [rideCount])
-  const weeks = useLiveQuery(() => weeklyLoad(16), [rideCount])
+  // fitness and weekly load count runs, swims and other sports too
+  const activityCount = useLiveQuery(() => db().activities.count(), [])
+  const pmc = useLiveQuery(() => pmcSeries(180), [rideCount, activityCount])
+  const weeks = useLiveQuery(() => weeklyLoad(16), [rideCount, activityCount])
   const curve = useLiveQuery(() => powerCurve(), [rideCount])
   const ftp = useLiveQuery(() => ftpTimeline(), [])
 
   const latest = pmc?.at(-1)
   return (
     <div className="mx-auto max-w-6xl px-4 md:px-8 pb-12">
-      <PageHeader title="Fitness" subtitle="Training load, FTP over time and your power curve. Simulated rides are excluded." />
+      <PageHeader title="Fitness" subtitle="Training load from every sport, FTP over time and your power curve from rides. Simulated rides are excluded." />
 
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Fitness (CTL)" value={latest ? Math.round(latest.ctl) : null} />

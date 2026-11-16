@@ -65,7 +65,7 @@ describe('MonthCalendar', () => {
     await db().rides.put(ride('r1', past, 'builtin:sweet-spot-3x12', 60))
     render(<MonthCalendar />)
     // the chips' own markers: role queries are slow under a loaded test run
-    const doneChip = await appears(`[data-date="${past}"] [data-testid="calendar-ride"]`)
+    const doneChip = await appears(`[data-date="${past}"] [data-testid="calendar-ride"][data-done="true"]`)
     expect(doneChip.getAttribute('data-done')).toBe('true')
     const missedChip = await appears(`[data-date="${missedDay}"] [data-testid="calendar-planned"]`)
     expect(missedChip.getAttribute('data-status')).toBe('missed')
@@ -80,7 +80,31 @@ describe('MonthCalendar', () => {
     const week = screen.getAllByTestId('week-volume').find((w) => /Planned/.test(w.textContent ?? ''))!
     // Sweet spot 3×12 is about an hour at the default FTP
     expect(within(week).getByText(/0 done · 1 planned/)).toBeTruthy()
-    expect(screen.getByTestId('month-volume').textContent).toMatch(/1 workout(?!s)/)
+    expect(screen.getByTestId('month-volume').textContent).toMatch(/1 session(?!s)/)
+  })
+
+  it('splits a week’s volume by sport: a ride planned, a run and a squash game done', async () => {
+    const day = inMonth(-1) ?? inMonth(1)!
+    await db().schedule.put({ id: 'p', date: day, workoutId: 'builtin:sweet-spot-3x12', workout: null, name: 'Sweet spot', source: 'manual', createdAt: 1 })
+    await db().activities.bulkPut([
+      { id: 'run', startedAt: dayMs(day, 7), sport: 'running', subSport: null, name: 'Morning run', movingS: 2400, distanceM: 8000, avgHr: 150, maxHr: 170, hrLoad: 45, trainingEffect: null, garminLoad: null, device: null, fileName: 'run.fit' },
+      { id: 'sq', startedAt: dayMs(day, 20), sport: 'racket', subSport: 'squash', name: 'Evening squash', movingS: 3600, distanceM: null, avgHr: 160, maxHr: 185, hrLoad: 70, trainingEffect: null, garminLoad: null, device: null, fileName: 'squash.fit' },
+    ])
+    render(<MonthCalendar />)
+    // the planned ride's length comes once the library has loaded
+    await waitFor(
+      () => {
+        const rows = [...(screen.getAllByTestId('week-volume').find((w) => w.querySelector('[data-sport="run"]'))?.querySelectorAll('[data-sport]') ?? [])]
+        expect(rows.map((r) => r.getAttribute('data-sport'))).toEqual(['ride', 'run', 'other'])
+        expect(rows[0]!.textContent).toMatch(/Ride0m \/ 1h/)
+        expect(rows[1]!.textContent).toMatch(/Run40m/)
+        expect(rows[1]!.textContent).toMatch(/km|mi/)
+        expect(rows[2]!.textContent).toMatch(/Other1h 00m/)
+        // the month's line counts them too: 40 min of running and an hour of squash, 45 + 70 load
+        expect(screen.getByTestId('calendar-summary').textContent).toMatch(/0 rides \+ 2 other · 1h 40m · 115 TSS/)
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('shows fitness and form at each week’s end, projected after today', async () => {

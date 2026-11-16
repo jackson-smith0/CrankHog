@@ -5,6 +5,7 @@ import { BUILTIN_WORKOUTS } from '@core/workout/builtins'
 import { compileWorkout, type Timeline } from '@core/workout/compile'
 import { FTP_TESTS } from '@core/workout/ftp-tests'
 import { parseErgMrcWithWarnings, toErg, toMrc } from '@core/workout/io/ergmrc'
+import { isSessionFile } from '@core/multisport/parse'
 import { parseIntervalsText, toIntervalsText } from '@core/workout/io/intervals-text'
 import { parseZwoWithWarnings, toZwo } from '@core/workout/io/zwo'
 import type { Workout, WorkoutFolder } from '@core/workout/model'
@@ -140,6 +141,8 @@ export function parseWorkoutFile(fileName: string, text: string): ImportResult {
     return { workout: { ...r.workout, source: 'import', name: r.workout.name || fileName.replace(/\.[^.]+$/, '') }, warnings: r.warnings }
   }
   if (ext === '.txt') {
+    // a run, swim or other session has its own importer (workouts/session-import.ts)
+    if (isSessionFile(text)) throw new Error('This is a run, swim or other session (it has a sport line), not a bike workout. Import it on the Calendar or the Run & swim tab.')
     // plain text has no name of its own: the file's name is the workout's
     const r = parseIntervalsText(text, { name: fileName.replace(/\.[^.]+$/, '') })
     if (r.workout.segments.length === 0) throw new Error(r.errors[0] ? `Line ${r.errors[0].line}: ${r.errors[0].message}` : 'No workout steps found.')

@@ -3,11 +3,12 @@
 // (events and days off), and each week with its totals. Local calendar days
 // throughout, so a clock change never moves anything.
 import type { RideSummary } from '@core/ride/types'
+import { activityGroup } from '@core/sport/group'
 import type { DayMark } from '@core/workout/plan'
 import { completions, dateKey, scheduleStatus, type DateKey, type ScheduleStatus, type ScheduledWorkout } from '@core/workout/schedule'
 import type { OtherActivity } from '../../db/db'
 
-/** A planned workout on the calendar. Done ones show as their ride instead (see plannedRideIds). */
+/** A planned workout on the calendar. Done ones show as their ride or activity instead (see plannedRideIds, plannedActivityIds). */
 export interface PlannedOnDay {
   entry: ScheduledWorkout
   status: Exclude<ScheduleStatus, 'done'>
@@ -22,12 +23,14 @@ export interface CalendarDay {
   isToday: boolean
   isPast: boolean
   rides: RideSummary[]
-  /** Runs, swims and strength sessions from FIT files. */
+  /** Runs, swims, squash and everything that isn't a ride in the history. */
   activities: OtherActivity[]
   tss: number
   planned: PlannedOnDay[]
   /** Rides that completed a planned workout. */
   plannedRideIds: string[]
+  /** Activities that completed a planned session. */
+  plannedActivityIds: string[]
   marks: DayMark[]
 }
 
@@ -86,6 +89,7 @@ export function calendarMonth(year: number, month: number, input: CalendarInput)
   const done = completions(
     schedule,
     rides.map((r) => ({ id: r.id, startedAt: r.startedAt, workoutId: r.workoutId, simulated: r.simulated })),
+    activities.map((a) => ({ id: a.id, startedAt: a.startedAt, group: activityGroup(a) })),
   )
   const doneRides = new Set(done.values())
   const plannedByDay = groupBy(
@@ -103,8 +107,10 @@ export function calendarMonth(year: number, month: number, input: CalendarInput)
       const list = (ridesByDay.get(key) ?? []).slice().sort((a, b) => a.startedAt - b.startedAt)
       const onDay = plannedByDay.get(key) ?? []
       const plannedRideIds = list.filter((r) => doneRides.has(r.id)).map((r) => r.id)
+      const dayActivities = (activitiesByDay.get(key) ?? []).slice().sort((a, b) => a.startedAt - b.startedAt)
+      const plannedActivityIds = dayActivities.filter((a) => doneRides.has(a.id)).map((a) => a.id)
       const inMonth = d.getMonth() === month
-      if (inMonth) planned += onDay.length + plannedRideIds.length
+      if (inMonth) planned += onDay.length + plannedRideIds.length + plannedActivityIds.length
       days.push({
         date: d.getTime(),
         key,
@@ -113,9 +119,10 @@ export function calendarMonth(year: number, month: number, input: CalendarInput)
         isToday: key === today,
         isPast: key < today,
         rides: list,
-        activities: (activitiesByDay.get(key) ?? []).slice().sort((a, b) => a.startedAt - b.startedAt),
+        activities: dayActivities,
         tss: list.reduce((s, r) => s + (r.tss ?? 0), 0),
         planned: onDay,
+        plannedActivityIds,
         plannedRideIds,
         marks: marksByDay.get(key) ?? [],
       })

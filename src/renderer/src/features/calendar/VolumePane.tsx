@@ -1,7 +1,11 @@
 import type { ProjectedPmcRow } from '@core/metrics/pmc'
-import type { VolumeSide, VolumeTotals } from '@core/workout/volume'
+import { formatSportDistance } from '@core/sport/format'
+import { SPORT_GROUP_LABEL } from '@core/sport/group'
+import { sportsIn, type VolumeSide, type VolumeTotals } from '@core/workout/volume'
+import { useSettings } from '../../stores/settings'
 import { cn } from '../../ui/cn'
 import { formatDurationShort } from '../../ui/format'
+import { SportIcon } from './SportIcon'
 
 /** Completed against planned, as a bar: green when the planned volume is met. */
 function Bar({ done, planned, label }: { done: number; planned: number; label: string }) {
@@ -24,6 +28,35 @@ function Row({ label, side }: { label: string; side: VolumeSide }) {
         {time(side.durationS)} <span className="text-ink-dim">· {load(side.load)} TSS</span>
       </span>
     </div>
+  )
+}
+
+/**
+ * Ride, Run, Swim and Other, one line each for the sports with anything
+ * planned or done: time done against time planned, and the distance done.
+ */
+function SportRows({ v }: { v: VolumeTotals }) {
+  const units = useSettings((s) => s.units)
+  const sports = sportsIn(v)
+  if (sports.length === 0) return null
+  return (
+    <ul className="space-y-0.5" data-testid="sport-volume">
+      {sports.map((g) => {
+        const done = v.completed.bySport[g]
+        const planned = v.planned.bySport[g]
+        return (
+          <li key={g} className="flex items-center gap-1.5" data-sport={g}>
+            <SportIcon sport={g} className="size-3 shrink-0 text-ink-dim" aria-hidden />
+            <span className="w-10 shrink-0 text-ink-dim">{SPORT_GROUP_LABEL[g]}</span>
+            <span className="tabular">
+              {time(done.durationS)}
+              {planned.sessions > 0 && <span className="text-ink-faint"> / {time(planned.durationS)}</span>}
+            </span>
+            {done.distanceM > 0 && g !== 'other' && <span className="ml-auto tabular text-ink-faint">{formatSportDistance(done.distanceM, g, units)}</span>}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -62,6 +95,7 @@ export function WeekVolume({ v, fitness, testId }: { v: VolumeTotals; fitness?: 
           <Row label="Planned" side={v.planned} />
           <Row label="Done" side={v.completed} />
           <Bar done={v.completed.load} planned={v.planned.load} label={`${load(v.completed.load)} of ${load(v.planned.load)} TSS planned`} />
+          <SportRows v={v} />
           <div className="flex justify-between text-ink-dim">
             <span>
               {v.completed.sessions} done · {v.planned.sessions} planned
@@ -84,7 +118,7 @@ export function MonthVolume({ v }: { v: VolumeTotals }) {
           <div className="eyebrow text-ink-faint">Planned</div>
           <div className="font-display text-lg font-semibold tabular">{time(v.planned.durationS)}</div>
           <div className="text-xs text-ink-dim tabular">
-            {load(v.planned.load)} TSS · {v.planned.sessions} workout{v.planned.sessions === 1 ? '' : 's'}
+            {load(v.planned.load)} TSS · {v.planned.sessions} session{v.planned.sessions === 1 ? '' : 's'}
           </div>
         </div>
         <div>
@@ -96,7 +130,10 @@ export function MonthVolume({ v }: { v: VolumeTotals }) {
         </div>
       </div>
       <Bar done={v.completed.durationS} planned={v.planned.durationS} label={`${time(v.completed.durationS)} of ${time(v.planned.durationS)} planned`} />
-      {v.compliance !== null && <div className="text-xs text-ink-dim">{Math.round(v.compliance * 100)} % of planned workouts done so far</div>}
+      <div className="text-xs">
+        <SportRows v={v} />
+      </div>
+      {v.compliance !== null && <div className="text-xs text-ink-dim">{Math.round(v.compliance * 100)} % of planned sessions done so far</div>}
     </div>
   )
 }

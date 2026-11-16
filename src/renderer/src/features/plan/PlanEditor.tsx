@@ -1,11 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { ArrowDown, ArrowUp, CalendarCheck, CalendarX, FileUp, Plus, Search, Trash2, Undo2, X } from 'lucide-react'
+import { describeSession } from '@core/multisport/build'
+import type { SessionWorkout } from '@core/multisport/model'
+import { SPORT_GROUP_LABEL } from '@core/sport/group'
 import { isBlocking, layOutPlan, type PlanWarning, type TrainingPlan } from '@core/workout/plan'
 import { dateKey, dateKeyToMs, isDateKey } from '@core/workout/schedule'
 import { db } from '../../db/db'
 import { useFtp } from '../../db/use-athlete'
-import { addToPlan, deletePlan, importIntoPlan, moveItem, putOnCalendar, resetPlanWorkout, takeOffCalendar, takeOutOfPlan, updatePlan } from '../../plan/plans-repo'
+import { addSessionToPlan, addToPlan, deletePlan, importIntoPlan, moveItem, putOnCalendar, resetPlanWorkout, takeOffCalendar, takeOutOfPlan, updatePlan } from '../../plan/plans-repo'
 import { Button } from '../../ui/Button'
 import { cn } from '../../ui/cn'
 import { Field, Input } from '../../ui/form'
@@ -13,6 +16,8 @@ import { formatDurationShort } from '../../ui/format'
 import { useNow } from '../../ui/useNow'
 import { IMPORT_EXTENSIONS, loadLibrary, plannedStatsOf, type LibraryEntry } from '../../workouts/library'
 import { planImportNotice } from './import-notice'
+import { SportIcon } from '../calendar/SportIcon'
+import { listSessionWorkouts, sessionThresholds } from '../../workouts/sessions-repo'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
@@ -40,6 +45,9 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
   const library = useLiveQuery(() => loadLibrary(ftpW), [ftpW])
   const marks = useLiveQuery(() => db().dayMarks.toArray(), [])
   const byId = useMemo(() => new Map((library ?? []).map((e) => [e.workout.id, e])), [library])
+  const sessions = useLiveQuery(() => listSessionWorkouts(), [])
+  const thresholds = useLiveQuery(() => sessionThresholds(), [])
+  const sessionById = useMemo(() => new Map((sessions ?? []).map((w) => [w.id, { workout: w, estimate: describeSession(w, thresholds ?? {}).estimate }])), [sessions, thresholds])
   const [name, setName] = useState(plan.name)
   const [adding, setAdding] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -62,6 +70,7 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
   )
   const dateOf = new Map(layout.placements.map((p) => [p.index, p.date]))
   const total = plan.items.reduce((s, i) => {
+    if (i.sport) return s + (sessionById.get(i.workoutId)?.estimate?.durationS ?? 0)
     const e = byId.get(i.workoutId)
     return s + (e ? plannedStatsOf(e.workout, e.stats).durationS : 0)
   }, 0)
@@ -186,14 +195,23 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
             </Button>
           </div>
         </div>
-        {adding && <Picker library={library ?? []} onPick={(w) => void act(() => addToPlan(plan.id, w.workout.id))} onClose={() => setAdding(false)} />}
+        {adding && (
+          <Picker
+            library={library ?? []}
+            sessions={sessions ?? []}
+            onPick={(w) => void act(() => addToPlan(plan.id, w.workout.id))}
+            onPickSession={(w) => void act(() => addSessionToPlan(plan.id, w))}
+            onClose={() => setAdding(false)}
+          />
+        )}
         {plan.items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-faint">No workouts yet. Add some from your library, or import .zwo, .mrc, .erg or .txt files.</div>
+          <div className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-faint">No workouts yet. Add some from your library, or import .zwo, .mrc, .erg or .txt files, run and swim sessions included.</div>
         ) : (
           <ol className="space-y-1.5">
             {plan.items.map((item, i) => {
-              const entry = byId.get(item.workoutId)
-              const name = entry?.workout.name ?? (library ? 'Workout no longer in your library' : '…')
+              const entry = item.sport ? undefined : byId.get(item.workoutId)
+              const session = item.sport ? sessionById.get(item.workoutId) : undefined
+              const name = item.sport ? (session?.workout.name ?? (sessions ? 'Session no longer in Run & swim' : '…')) : (entry?.workout.name ?? (library ? 'Workout no longer in your library' : '…'))
               const date = dateOf.get(i)
               return (
                 <li key={item.id} className="flex items-center gap-3 rounded-xl border border-line bg-panel-2 px-3 py-2" data-testid="plan-item">
@@ -201,8 +219,12 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{name}</div>
+                    <div className="flex items-center gap-1.5 truncate font-medium">
+                      {item.sport && <SportIcon sport={item.sport} className="size-3.5 shrink-0 text-accent" aria-label={SPORT_GROUP_LABEL[item.sport]} />}
+                      {name}
+                    </div>
                     <div className="text-xs text-ink-dim tabular">
+                      {item.sport && session && `${SPORT_GROUP_LABEL[item.sport]}${session.estimate?.durationS ? ` · ${formatDurationShort(session.estimate.durationS)}` : ''}${session.estimate?.load !== null && session.estimate?.load !== undefined ? ` · TSS ${Math.round(session.estimate.load)}` : ''} · `}
                       {entry && (entry.workout.ftpTest?.protocol === 'ramp' ? 'Ramp test, about 20 to 30 min · ' : `${formatDurationShort(entry.stats.durationS)}${entry.stats.tss !== null ? ` · TSS ${Math.round(entry.stats.tss)}` : ''} · `)}
                       <span data-testid="plan-item-date">
                         {item.removed
@@ -237,13 +259,17 @@ export function PlanEditor({ plan, onDeleted, onNotice }: { plan: TrainingPlan; 
   )
 }
 
-/** Search the library and add a workout to the plan. */
-function Picker({ library, onPick, onClose }: { library: readonly LibraryEntry[]; onPick: (e: LibraryEntry) => void; onClose: () => void }) {
+/** Search the library, bike workouts and run and swim sessions, and add one to the plan. */
+function Picker({ library, sessions, onPick, onPickSession, onClose }: { library: readonly LibraryEntry[]; sessions: readonly SessionWorkout[]; onPick: (e: LibraryEntry) => void; onPickSession: (w: SessionWorkout) => void; onClose: () => void }) {
   const [q, setQ] = useState('')
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase()
     return library.filter((e) => !t || e.workout.name.toLowerCase().includes(t) || e.workout.tags.some((x) => x.includes(t))).slice(0, 8)
   }, [library, q])
+  const shownSessions = useMemo(() => {
+    const t = q.trim().toLowerCase()
+    return sessions.filter((w) => !t || w.name.toLowerCase().includes(t) || w.sport.includes(t)).slice(0, 6)
+  }, [sessions, q])
   return (
     <div className="mb-3 rounded-xl border border-line bg-panel-2 p-3" data-testid="plan-picker">
       <div className="relative">
@@ -262,7 +288,18 @@ function Picker({ library, onPick, onClose }: { library: readonly LibraryEntry[]
             </button>
           </li>
         ))}
-        {shown.length === 0 && <li className="px-2 py-1.5 text-sm text-ink-faint">Nothing matches.</li>}
+        {shownSessions.map((w) => (
+          <li key={w.id}>
+            <button type="button" onClick={() => onPickSession(w)} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-panel-3" data-testid="plan-picker-session">
+              <span className="flex min-w-0 items-center gap-1.5 truncate">
+                <SportIcon sport={w.sport} className="size-3.5 shrink-0 text-ink-dim" aria-hidden />
+                {w.name}
+              </span>
+              <span className="shrink-0 text-xs text-ink-dim">{SPORT_GROUP_LABEL[w.sport]}</span>
+            </button>
+          </li>
+        ))}
+        {shown.length === 0 && shownSessions.length === 0 && <li className="px-2 py-1.5 text-sm text-ink-faint">Nothing matches.</li>}
       </ul>
     </div>
   )

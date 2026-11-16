@@ -1,7 +1,17 @@
-// Fitness data prep from stored rides. Simulated rides never count.
+// Fitness data prep from stored rides and other sports. Simulated rides never
+// count. Fitness, fatigue, form and weekly load count every sport by default;
+// the power curve and FTP are rides only. What the AI is given asks for rides
+// only (sports: 'rides'): it gets locally recorded rides, nothing synced.
 import { computePmc, estimateFtp, mergeMmp, type PmcRow } from '@core/metrics'
 import type { RideSummary } from '@core/ride/types'
-import { db, type FtpEntry } from './db'
+import { dailyLoad } from '@core/sport/daily-load'
+import { activityLoad } from '@core/sport/load'
+import { db, type FtpEntry, type OtherActivity } from './db'
+
+/** Which sessions count: every sport (the default), or rides alone (for what the AI is given). */
+export interface SportsOption {
+  sports?: 'all' | 'rides'
+}
 
 const DAY = 86_400_000
 
@@ -15,18 +25,22 @@ export async function realRides(sinceMs = 0): Promise<RideSummary[]> {
   return rows.filter((r) => !r.simulated).sort((a, b) => a.startedAt - b.startedAt)
 }
 
-export async function pmcSeries(days = 180): Promise<PmcRow[]> {
+/** Runs, swims and other sports since `sinceMs`, oldest first. */
+export async function otherActivities(sinceMs = 0): Promise<OtherActivity[]> {
+  const rows = await db().activities.where('startedAt').above(sinceMs).toArray()
+  return rows.sort((a, b) => a.startedAt - b.startedAt)
+}
+
+export async function pmcSeries(days = 180, opts: SportsOption = {}): Promise<PmcRow[]> {
   // Warm the model up with everything we have; display the last `days`.
   const rides = await realRides(0)
-  if (rides.length === 0) return []
+  const activities = opts.sports === 'rides' ? [] : await otherActivities(0)
+  if (rides.length === 0 && activities.length === 0) return []
   const now = new Date()
   const today = isoDay(now.getTime())
   // calendar days, not 24-hour steps, so a clock change can't shift the range
   const from = isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days).getTime())
-  return computePmc(
-    rides.map((r) => ({ date: isoDay(r.startedAt), tss: r.tss ?? 0 })),
-    { from, to: today },
-  )
+  return computePmc(dailyLoad({ rides, activities: activities.map((a) => ({ startedAt: a.startedAt, load: activityLoad(a) })) }), { from, to: today })
 }
 
 export interface WeeklyLoad {
@@ -35,25 +49,39 @@ export interface WeeklyLoad {
   hours: number
   kj: number
   rides: number
+  /** Runs, swims and other sessions (0 when asked for rides only). */
+  others: number
 }
 
-export async function weeklyLoad(weeks = 16): Promise<WeeklyLoad[]> {
+export async function weeklyLoad(weeks = 16, opts: SportsOption = {}): Promise<WeeklyLoad[]> {
   const now = new Date()
   const monday = now.getDate() - ((now.getDay() + 6) % 7)
   // each week starts on a calendar Monday, so a clock change can't move a ride into the wrong week
   const starts = Array.from({ length: weeks + 1 }, (_, i) => new Date(now.getFullYear(), now.getMonth(), monday + (i - weeks + 1) * 7).getTime())
   const start = starts[0]!
   const rides = await realRides(start)
-  const out: WeeklyLoad[] = starts.slice(0, weeks).map((weekStart) => ({ weekStart, tss: 0, hours: 0, kj: 0, rides: 0 }))
-  for (const r of rides) {
-    let i = starts.findIndex((s) => s > r.startedAt) - 1
+  const out: WeeklyLoad[] = starts.slice(0, weeks).map((weekStart) => ({ weekStart, tss: 0, hours: 0, kj: 0, rides: 0, others: 0 }))
+  const weekOf = (t: number): WeeklyLoad | undefined => {
+    let i = starts.findIndex((s) => s > t) - 1
     if (i < -1) i = weeks - 1
-    const w = out[i]
+    return out[i]
+  }
+  for (const r of rides) {
+    const w = weekOf(r.startedAt)
     if (!w) continue
     w.tss += r.tss ?? 0
     w.hours += r.movingS / 3600
     w.kj += r.kj
     w.rides++
+  }
+  if (opts.sports !== 'rides') {
+    for (const a of await otherActivities(start)) {
+      const w = weekOf(a.startedAt)
+      if (!w) continue
+      w.tss += activityLoad(a) ?? 0
+      w.hours += a.movingS / 3600
+      w.others++
+    }
   }
   return out
 }

@@ -1,12 +1,19 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import type { DayMark } from '@core/workout/plan'
+import { SPORT_GROUP_LABEL } from '@core/sport/group'
+import { effortLoad } from '@core/sport/load'
+import { addManualActivity } from '../../plan/activities-repo'
 import { addMark, removeMark } from '../../plan/day-marks-repo'
+import { scheduleSession } from '../../plan/schedule-repo'
+import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { Field, Input } from '../../ui/form'
 import { Segmented, type SegmentedOption } from '../../ui/Segmented'
 import { MARK_NAME, type CalendarDay } from './calendar'
+import { SessionFields } from './SessionFields'
+import { emptyDraft, readDraft, type SessionDraft } from './session-draft'
 
 const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const KINDS: SegmentedOption<DayMark['kind']>[] = [
@@ -21,8 +28,28 @@ const PRIORITY: SegmentedOption<NonNullable<DayMark['priority']>>[] = [
   { value: 'C', label: 'C', hint: 'Training race' },
 ]
 
-/** One day: its events and days off, and adding another. Plans on the calendar move off days off. */
+type Mode = 'mark' | 'plan' | 'log'
+
+const MODE_TITLE: Record<Mode, string> = {
+  mark: 'Mark an event, or a day you can’t ride. Plans on the calendar leave days off free and stop before their event.',
+  plan: 'Plan a session of any sport: a run, a swim, a squash game, or a ride without a workout.',
+  log: 'Log something you did that isn’t on the calendar yet: a squash game, a run without your watch.',
+}
+
+/**
+ * One day: its events and days off, and adding another; planning a session
+ * of any sport; and, on a day that has been, logging an activity.
+ */
 export function DayDialog({ day, onClose }: { day: CalendarDay; onClose: () => void }) {
+  const canLog = day.isPast || day.isToday
+  const modes: SegmentedOption<Mode>[] = [
+    { value: 'mark', label: 'Event or day off' },
+    { value: 'plan', label: 'Plan a session' },
+    ...(canLog ? [{ value: 'log' as const, label: 'Log an activity' }] : []),
+  ]
+  const units = useSettings((s) => s.units)
+  const [mode, setMode] = useState<Mode>('mark')
+  const [draft, setDraft] = useState<SessionDraft>(emptyDraft())
   const [kind, setKind] = useState<DayMark['kind']>('event')
   const [name, setName] = useState('')
   const [priority, setPriority] = useState<NonNullable<DayMark['priority']>>('A')
@@ -46,20 +73,44 @@ export function DayDialog({ day, onClose }: { day: CalendarDay; onClose: () => v
       await addMark(kind === 'event' ? { date: day.key, kind, name: name.trim(), priority } : { date: day.key, kind })
       onClose()
     })
+  const plan = () =>
+    act(async () => {
+      const v = readDraft(draft, units, { needTime: false })
+      const load = v.load ?? effortLoad(v.durationS, v.effort)
+      await scheduleSession(day.key, v.group, v.label ?? SPORT_GROUP_LABEL[v.group], { label: v.label, durationS: v.durationS, distanceM: v.distanceM, effort: v.effort, load, notes: v.notes })
+      onClose()
+    })
+  const log = () =>
+    act(async () => {
+      const v = readDraft(draft, units, { needTime: true })
+      await addManualActivity({ date: day.key, group: v.group, label: v.label, durationS: v.durationS!, distanceM: v.distanceM, effort: v.effort, load: v.load, notes: v.notes })
+      onClose()
+    })
+  const footer =
+    mode === 'mark' ? (
+      <Button variant="primary" onClick={() => void add()} disabled={busy} data-testid="day-mark-add">
+        Add {kind === 'event' ? 'event' : MARK_NAME[kind].toLowerCase()}
+      </Button>
+    ) : mode === 'plan' ? (
+      <Button variant="primary" onClick={() => void plan()} disabled={busy} data-testid="day-plan-add">
+        Plan {SPORT_GROUP_LABEL[draft.group].toLowerCase()}
+      </Button>
+    ) : (
+      <Button variant="primary" onClick={() => void log()} disabled={busy} data-testid="day-log-add">
+        Log {SPORT_GROUP_LABEL[draft.group].toLowerCase()}
+      </Button>
+    )
 
   return (
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
       title={DAY.format(day.date)}
-      description="Mark an event, or a day you can't ride. Plans on the calendar leave days off free and stop before their event."
-      footer={
-        <Button variant="primary" onClick={() => void add()} disabled={busy} data-testid="day-mark-add">
-          Add {kind === 'event' ? 'event' : MARK_NAME[kind].toLowerCase()}
-        </Button>
-      }
+      description={MODE_TITLE[mode]}
+      footer={footer}
     >
       <div className="space-y-4">
+        <Segmented ariaLabel="What to add" value={mode} options={modes} onChange={(m) => (setMode(m), setError(null))} className="flex-wrap" />
         {day.marks.length > 0 && (
           <ul className="space-y-1.5" aria-label="On this day">
             {day.marks.map((m) => (
@@ -72,8 +123,9 @@ export function DayDialog({ day, onClose }: { day: CalendarDay; onClose: () => v
             ))}
           </ul>
         )}
-        <Segmented ariaLabel="What kind of day" value={kind} options={KINDS} onChange={setKind} className="flex-wrap" />
-        {kind === 'event' && (
+        {mode !== 'mark' && <SessionFields draft={draft} onChange={setDraft} idPrefix={mode === 'plan' ? 'plan' : 'log'} />}
+        {mode === 'mark' && <Segmented ariaLabel="What kind of day" value={kind} options={KINDS} onChange={setKind} className="flex-wrap" />}
+        {mode === 'mark' && kind === 'event' && (
           <>
             <Field label="Name">
               <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Gran fondo" aria-label="Event name" data-testid="day-mark-name" />

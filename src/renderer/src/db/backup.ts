@@ -2,13 +2,15 @@
 // streams are stored as base64 so the round trip is lossless.
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
 import type { RideStreams } from '@core/ride/streams'
-import { db } from './db'
+import { completeActivity, db, type OtherActivity } from './db'
 import { adoptLegacyPlanWorkouts } from './legacy-plan'
 
 export const BACKUP_FORMAT = 'crankhog-backup'
 // 2: plans, the calendar, other sports and days off. An older app refuses a
 // newer backup rather than silently leaving those out.
-export const BACKUP_VERSION = 2
+// 3: multisport: run, swim and other session workouts, and activities that
+// say where they came from (FIT, intervals.icu, entered by hand).
+export const BACKUP_VERSION = 3
 
 type TypedKey = Exclude<keyof RideStreams, 'rideId' | 'length'>
 const TYPED: Record<TypedKey, 'f64' | 'f32' | 'u16' | 'u32'> = {
@@ -87,7 +89,7 @@ function decodeStreams(o: Record<string, unknown>): RideStreams {
 
 export async function createBackup(): Promise<Uint8Array> {
   const d = db()
-  const [rides, streams, workouts, ftpHistory, profile, kv, routes, routeRides, journeys, schedule, plans, activities, dayMarks] = await Promise.all([
+  const [rides, streams, workouts, ftpHistory, profile, kv, routes, routeRides, journeys, schedule, plans, activities, dayMarks, sessionWorkouts] = await Promise.all([
     d.rides.toArray(),
     d.rideStreams.toArray(),
     d.workouts.toArray(),
@@ -101,6 +103,7 @@ export async function createBackup(): Promise<Uint8Array> {
     d.plans.toArray(),
     d.activities.toArray(),
     d.dayMarks.toArray(),
+    d.sessionWorkouts.toArray(),
   ])
   const files: Zippable = {
     'manifest.json': strToU8(JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, createdAt: Date.now(), counts: { rides: rides.length, workouts: workouts.length, routes: routes.length } })),
@@ -116,6 +119,7 @@ export async function createBackup(): Promise<Uint8Array> {
     'plans.json': strToU8(JSON.stringify(plans)),
     'activities.json': strToU8(JSON.stringify(activities)),
     'dayMarks.json': strToU8(JSON.stringify(dayMarks)),
+    'sessionWorkouts.json': strToU8(JSON.stringify(sessionWorkouts)),
   }
   for (const s of streams) files[`streams/${s.rideId}.json`] = strToU8(JSON.stringify(encodeStreams(s)))
   return zipSync(files, { level: 6 })
@@ -150,13 +154,16 @@ export async function restoreBackup(zip: Uint8Array): Promise<RestoreResult> {
   // backups from before the schedule have none
   const schedule = json<unknown[]>('schedule.json', [])
   const plans = json<unknown[]>('plans.json', [])
-  const activities = json<unknown[]>('activities.json', [])
+  // activities from a version 2 backup get the source and group the v6 upgrade gives them
+  const activities = json<OtherActivity[]>('activities.json', []).map(completeActivity)
   const dayMarks = json<unknown[]>('dayMarks.json', [])
+  // backups from before multisport have no session workouts
+  const sessionWorkouts = json<unknown[]>('sessionWorkouts.json', [])
   const streams = Object.keys(files)
     .filter((n) => n.startsWith('streams/') && n.endsWith('.json'))
     .map((n) => decodeStreams(JSON.parse(strFromU8(files[n]!)) as Record<string, unknown>))
 
-  await d.transaction('rw', [d.rides, d.rideStreams, d.workouts, d.ftpHistory, d.profile, d.kv, d.routes, d.routeRides, d.journeys, d.schedule, d.plans, d.activities, d.dayMarks], async () => {
+  await d.transaction('rw', [d.rides, d.rideStreams, d.workouts, d.ftpHistory, d.profile, d.kv, d.routes, d.routeRides, d.journeys, d.schedule, d.plans, d.activities, d.dayMarks, d.sessionWorkouts], async () => {
     await d.rides.bulkPut(rides as never[])
     await d.rideStreams.bulkPut(streams)
     await d.workouts.bulkPut(workouts as never[])
@@ -168,8 +175,9 @@ export async function restoreBackup(zip: Uint8Array): Promise<RestoreResult> {
     await d.journeys.bulkPut(journeys as never[])
     await d.schedule.bulkPut(schedule as never[])
     await d.plans.bulkPut(plans as never[])
-    await d.activities.bulkPut(activities as never[])
+    await d.activities.bulkPut(activities)
     await d.dayMarks.bulkPut(dayMarks as never[])
+    await d.sessionWorkouts.bulkPut(sessionWorkouts as never[])
     // a 0.6.4 backup brings back the old Training plan folder
     await adoptLegacyPlanWorkouts(d.workouts, d.plans)
   })

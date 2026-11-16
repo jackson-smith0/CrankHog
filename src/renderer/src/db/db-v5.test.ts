@@ -117,7 +117,8 @@ describe('database version 5', () => {
     await Promise.all([db().plans.clear(), db().activities.clear(), db().dayMarks.clear()])
     await restoreBackup(zip)
     expect(await db().plans.get('p1')).toEqual(plan)
-    expect(await db().activities.get('a1')).toEqual(run)
+    // restoring fills in what multisport added: it came from a FIT file, and it's a run
+    expect(await db().activities.get('a1')).toEqual({ ...run, source: 'fit', group: 'run' })
     expect(await db().dayMarks.get('d1')).toEqual(mark)
   })
 })

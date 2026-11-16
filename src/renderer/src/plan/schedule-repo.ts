@@ -1,7 +1,9 @@
 // Scheduled workouts in IndexedDB. What a scheduled workout is, and when it
 // counts as done, is in @core/workout/schedule.
-import type { DateKey, ScheduledWorkout } from '@core/workout/schedule'
+import type { SportGroup } from '@core/sport/group'
+import { pushedChanges, type DateKey, type PlannedSession, type ScheduledWorkout } from '@core/workout/schedule'
 import { db } from '../db/db'
+import { followPushed } from './intervals-push'
 import { movePlanWorkout, removePlanWorkout } from './plans-repo'
 
 const newId = () => `s${Date.now().toString(36)}${crypto.randomUUID().slice(0, 8)}`
@@ -19,11 +21,20 @@ export async function scheduleWorkout(date: DateKey, workout: { id: string; name
   return entry
 }
 
+/** Plans a session that isn't a bike workout: a run, a swim, a squash game, or a ride without steps. */
+export async function scheduleSession(date: DateKey, sport: SportGroup, name: string, session: PlannedSession): Promise<ScheduledWorkout> {
+  const entry: ScheduledWorkout = { id: newId(), date, workoutId: null, workout: null, name, source: 'manual', sport, session, createdAt: Date.now() }
+  await db().schedule.put(entry)
+  return entry
+}
+
 /** Moves a scheduled workout. One from a plan on the calendar stays moved when the plan is re-laid. */
 export async function moveScheduled(id: string, date: DateKey): Promise<void> {
   const e = await db().schedule.get(id)
+  // one from a plan moves through the plan, whose re-lay follows it to intervals.icu
   if (e?.planId && e.planItemId && (await movePlanWorkout(e.planId, e.planItemId, date))) return
   await db().schedule.update(id, { date })
+  if (e?.pushedEventId) void followPushed(pushedChanges([e], [{ id, date }]))
 }
 
 /** Takes a workout off the calendar. One from a plan stays in the plan, and stays off when the plan is re-laid. */
@@ -31,6 +42,7 @@ export async function removeScheduled(id: string): Promise<void> {
   const e = await db().schedule.get(id)
   if (e?.planId && e.planItemId && (await removePlanWorkout(e.planId, e.planItemId))) return
   await db().schedule.delete(id)
+  if (e?.pushedEventId) void followPushed(pushedChanges([e], []))
 }
 
 /**

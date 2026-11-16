@@ -5,6 +5,8 @@ import {
   dateKey,
   dateKeyToMs,
   fromIntervalsEvent,
+  pushedChanges,
+  pushedExternalId,
   scheduleStatus,
   todaysWorkout,
   type ScheduleRide,
@@ -70,6 +72,38 @@ describe('completions', () => {
     const imported = entry('a', '2026-11-14', '', { workoutId: null, workout: { id: 'intervals:42', name: 'Over-unders', tags: [], sportType: 'bike', segments: [], source: 'import' }, source: 'intervals' })
     expect(completions([imported], [ride('r1', at(2026, 11, 14), 'intervals:42')]).get('a')).toBe('r1')
   })
+
+  const session = (id: string, date: string, sport: ScheduledWorkout['sport'], createdAt = 0) => entry(id, date, '', { workoutId: null, sport, session: { durationS: 3600 }, createdAt })
+  const act = (id: string, startedAt: number, group: 'ride' | 'run' | 'swim' | 'other') => ({ id, startedAt, group })
+
+  it('a run, swim or squash game on its day completes a planned session of that sport', () => {
+    const e = [session('run', '2026-11-14', 'run'), session('swim', '2026-11-14', 'swim'), session('sq', '2026-11-15', 'other')]
+    const done = completions(e, [], [act('a1', at(2026, 11, 14, 7), 'run'), act('a2', at(2026, 11, 15, 20), 'other'), act('a3', at(2026, 11, 15), 'swim')])
+    expect([...done.entries()].sort()).toEqual([
+      ['run', 'a1'],
+      ['sq', 'a2'],
+    ])
+  })
+
+  it('one activity completes one session, earliest planned first', () => {
+    const e = [session('b', '2026-11-14', 'run', 2), session('a', '2026-11-14', 'run', 1)]
+    expect([...completions(e, [], [act('a1', at(2026, 11, 14), 'run')]).entries()]).toEqual([['a', 'a1']])
+  })
+
+  it('a ride planned without a workout is done by any real ride that day, after bike workouts claim theirs', () => {
+    const e = [entry('w', '2026-11-14', 'w', { createdAt: 5 }), session('long', '2026-11-14', 'ride', 1)]
+    const rides = [ride('r1', at(2026, 11, 14, 7), 'w')]
+    // the only ride is the workout's, so the free ride session stays open
+    expect([...completions(e, rides).entries()]).toEqual([['w', 'r1']])
+    const done = completions(e, [...rides, ride('r2', at(2026, 11, 14, 19), 'other')])
+    expect(done.get('long')).toBe('r2')
+    // an outdoor ride from intervals.icu does it too
+    expect(completions([session('long', '2026-11-14', 'ride')], [], [act('a1', at(2026, 11, 14), 'ride')]).get('long')).toBe('a1')
+  })
+
+  it('never completes a bike workout with an activity', () => {
+    expect(completions([entry('w', '2026-11-14', 'w')], [], [act('a1', at(2026, 11, 14), 'ride')]).size).toBe(0)
+  })
 })
 
 describe('scheduleStatus', () => {
@@ -119,9 +153,44 @@ describe('fromIntervalsEvent', () => {
     if (r.kind === 'ok') expect(r.entry.workout?.segments.length).toBeGreaterThan(0)
   })
 
-  it('skips runs, swims, and rides with no structure to play', () => {
-    expect(fromIntervalsEvent({ id: 1, start_date_local: '2026-11-18T00:00:00', name: 'Easy run', type: 'Run', description: '- 30m Z2' }, 0)).toEqual({ kind: 'skip', reason: 'not a ride' })
+  it('brings in runs, swims and other sessions with their steps as text and intervals.icu’s time and load', () => {
+    expect(fromIntervalsEvent({ id: 1, start_date_local: '2026-11-18T00:00:00', name: 'Easy run', type: 'Run', description: '- 30m Z2 HR', moving_time: 1800, icu_training_load: 25 }, 7)).toEqual({
+      kind: 'ok',
+      entry: { id: 'intervals:1', date: '2026-11-18', workoutId: null, workout: null, name: 'Easy run', source: 'intervals', externalId: '1', sport: 'run', session: { text: '- 30m Z2 HR', durationS: 1800, load: 25 }, createdAt: 7 },
+    })
+    const swim = fromIntervalsEvent({ id: 2, start_date_local: '2026-11-19T00:00:00', name: 'Swim', type: 'Swim' }, 0)
+    expect(swim.kind === 'ok' && [swim.entry.sport, swim.entry.session]).toEqual(['swim', {}])
+    const yoga = fromIntervalsEvent({ id: 3, start_date_local: '2026-11-19T00:00:00', name: 'Yoga', type: 'Yoga' }, 0)
+    expect(yoga.kind === 'ok' && yoga.entry.sport).toBe('other')
+  })
+
+  it('skips a session CrankHog sent to intervals.icu itself', () => {
+    expect(fromIntervalsEvent({ id: 9, start_date_local: '2026-11-18T00:00:00', name: 'Easy run', type: 'Run', external_id: 'freegaz-plan-s1' }, 0)).toEqual({ kind: 'skip', reason: 'sent from CrankHog' })
+  })
+
+  it('skips rides with no structure to play, and events without a date', () => {
     expect(fromIntervalsEvent({ id: 2, start_date_local: '2026-11-18T00:00:00', name: 'Ride outside', type: 'Ride', description: 'Coffee ride with the club' }, 0)).toEqual({ kind: 'skip', reason: 'no workout steps' })
     expect(fromIntervalsEvent({ id: 3, start_date_local: 'soon', name: 'x', type: 'Ride', zwo: ZWO }, 0)).toEqual({ kind: 'skip', reason: 'no date' })
+  })
+})
+
+describe('pushedChanges', () => {
+  it('finds sent sessions that moved or went, and ignores ones never sent', () => {
+    const before = [
+      { id: 'a', date: '2026-12-01', pushedEventId: 'e1' },
+      { id: 'b', date: '2026-12-02', pushedEventId: 'e2' },
+      { id: 'c', date: '2026-12-03', pushedEventId: 'e3' },
+      { id: 'd', date: '2026-12-04' },
+    ]
+    const after = [
+      { id: 'a', date: '2026-12-01' },
+      { id: 'b', date: '2026-12-05' },
+    ]
+    expect(pushedChanges(before, after)).toEqual({ moved: [{ entryId: 'b', eventId: 'e2', date: '2026-12-05' }], removed: [{ eventId: 'e3' }] })
+  })
+
+  it('makes a safe external id from any entry id', () => {
+    expect(pushedExternalId('plan-p1-i2')).toBe('freegaz-plan-plan-p1-i2')
+    expect(pushedExternalId('a:b c')).toBe('freegaz-plan-a-b-c')
   })
 })

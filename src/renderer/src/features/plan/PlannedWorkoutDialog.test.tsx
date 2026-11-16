@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/db'
-import { listScheduled, scheduleWorkout } from '../../plan/schedule-repo'
+import { listScheduled, scheduleSession, scheduleWorkout } from '../../plan/schedule-repo'
 import { PlannedWorkoutDialog } from './PlannedWorkoutDialog'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => async () => undefined }))
@@ -37,5 +37,29 @@ describe('PlannedWorkoutDialog', () => {
     render(<PlannedWorkoutDialog entry={e} status="today" onClose={() => undefined} />)
     await act(async () => fireEvent.click(screen.getByTestId('planned-ride')))
     expect(screen.getByText(/no longer in your library/)).toBeTruthy()
+  })
+
+  it('shows a planned run with what was planned, and no ride button', async () => {
+    const e = await scheduleSession('2026-11-18', 'run', 'Long run', { label: 'Long run', durationS: 5400, distanceM: 18_000, effort: 'easy', load: 60 })
+    render(<PlannedWorkoutDialog entry={e} status="planned" onClose={() => undefined} />)
+    const details = screen.getByTestId('planned-session-details').textContent ?? ''
+    expect(details).toMatch(/Run: Long run/)
+    expect(details).toMatch(/1h 30m/)
+    expect(details).toMatch(/Easy/)
+    expect(details).toMatch(/60 TSS/)
+    expect(screen.queryByTestId('planned-ride')).toBeNull()
+    expect(screen.getByText(/turns green once a run lands on its day/)).toBeTruthy()
+  })
+
+  it('sends a planned run to intervals.icu when it is set up, and says it was sent', async () => {
+    const invoke = vi.fn(async (channel: string) => (channel === 'intervals.status' ? { configured: true } : { eventId: '55' }))
+    window.crankhog = { invoke, on: () => () => undefined, send: () => undefined } as unknown as typeof window.crankhog
+    const e = await scheduleSession('2026-11-18', 'run', 'Long run', { text: '- 90m Z2 HR', durationS: 5400 })
+    render(<PlannedWorkoutDialog entry={e} status="planned" onClose={() => undefined} />)
+    const send = await screen.findByTestId('planned-send')
+    await act(async () => fireEvent.click(send))
+    expect(await screen.findByTestId('planned-sent')).toBeTruthy()
+    expect((await db().schedule.get(e.id))!.pushedEventId).toBe('55')
+    window.crankhog = undefined as unknown as typeof window.crankhog
   })
 })

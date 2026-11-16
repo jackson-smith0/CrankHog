@@ -74,6 +74,21 @@ describe('importFitFiles: a multisport file', () => {
   })
 })
 
+describe('importFitFiles: a ride already synced from intervals.icu', () => {
+  it('replaces the synced copy with the ride from its file, so it counts once', async () => {
+    const synced = { startedAt: at(87_720).getTime() + 10_000, sport: 'Ride', subSport: null, name: 'Road ride', movingS: 2400, distanceM: 30_000, avgHr: 150, maxHr: 170, hrLoad: null, trainingEffect: null, garminLoad: null, device: null, source: 'intervals' as const, group: 'ride' as const, icuLoad: 60, externalId: 'i9' }
+    await db().activities.bulkPut([
+      { ...synced, id: 'icu-i9' },
+      // something else that day, by hand: it stays
+      { ...synced, id: 'man-1', startedAt: at(87_720).getTime() + 30_000, source: 'manual', externalId: undefined },
+    ])
+    const r = await importFitFiles([file('tri.fit')])
+    expect(r.imported).toHaveLength(1)
+    expect(await db().activities.get('icu-i9')).toBeUndefined()
+    expect(await db().activities.get('man-1')).toBeTruthy()
+  })
+})
+
 describe('describeImport', () => {
   it('names what came in, leaving out what did not', () => {
     const item = { name: 'x', rideId: 'r', id: 'a' }
