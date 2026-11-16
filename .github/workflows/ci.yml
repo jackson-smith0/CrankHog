@@ -73,6 +73,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # CrankHog's Google app for Calendar sign-in (src/main/integrations/google-app.ts).
+          # Empty on pull requests from forks: those builds use the rider's own app.
+          CRANKHOG_GOOGLE_CLIENT_ID: ${{ secrets.CRANKHOG_GOOGLE_CLIENT_ID }}
+          CRANKHOG_GOOGLE_CLIENT_SECRET: ${{ secrets.CRANKHOG_GOOGLE_CLIENT_SECRET }}
       - run: npx playwright test
       - run: npx electron-builder --mac --publish never
       - name: Self-test the packaged app
