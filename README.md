@@ -318,7 +318,7 @@ Ad-hoc signatures change on every build, so macOS forgets permission grants such
 
 ### Releasing a signed build
 
-`npm run dist` makes an ad-hoc signed DMG, which macOS blocks on first launch. `npm run dist:signed` makes the same DMG signed with a Developer ID, with the hardened runtime, notarized by Apple and stapled, so it opens with only the usual "downloaded from the Internet" prompt. It needs a paid Apple Developer Program membership, and two things set up once per Mac:
+`npm run dist` makes an ad-hoc signed DMG, which macOS blocks on first launch. `npm run dist:signed` makes the same DMG signed with a Developer ID, with the hardened runtime, notarized by Apple and stapled, so it opens with only the usual "downloaded from the Internet" prompt. It needs a paid Apple Developer Program membership, and three things set up once per Mac:
 
 1. **A Developer ID Application certificate** in your login keychain. Create it at [developer.apple.com → Certificates](https://developer.apple.com/account/resources/certificates/add) from a certificate request made in Keychain Access. Without Xcode, also install Apple's [Developer ID G2 intermediate](https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer), or the certificate shows as not valid. `security find-identity -v -p codesigning` should list it.
 2. **Notarization credentials** in a keychain profile named `crankhog` (set `CRANKHOG_NOTARY_PROFILE` to use another name). Make an app-specific password at [account.apple.com](https://account.apple.com), then run:
@@ -326,8 +326,19 @@ Ad-hoc signatures change on every build, so macOS forgets permission grants such
    ```bash
    xcrun notarytool store-credentials crankhog --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
    ```
+3. **CrankHog's Google app** (the client ID and secret riders sign in to Google Calendar with) in the keychain. Each command asks for the value, so it stays out of your shell history:
 
-The script checks both before it builds. Then it signs, notarizes and staples the app and the DMG, builds the zip and `latest-mac.yml` that the in-app updater installs from, and runs `spctl` the way Gatekeeper will. Notarization usually takes a few minutes. CI keeps building the ad-hoc DMG, because the certificate never leaves your Mac. To release:
+   ```bash
+   security add-generic-password -U -s crankhog-google -a client-id -w
+   ```
+
+   ```bash
+   security add-generic-password -U -s crankhog-google -a client-secret -w
+   ```
+
+   `CRANKHOG_GOOGLE_CLIENT_ID` and `CRANKHOG_GOOGLE_CLIENT_SECRET` override them. Without the app, the DMG would send every rider off to make their own Google Cloud project, so the script refuses to build, and it checks the built app really carries it.
+
+The script checks all three before it builds. Then it signs, notarizes and staples the app and the DMG, builds the zip and `latest-mac.yml` that the in-app updater installs from, and runs `spctl` the way Gatekeeper will. Notarization usually takes a few minutes. CI keeps building the ad-hoc DMG, because the certificate never leaves your Mac. To release:
 
 1. Merge the version bump and push the tag (`v0.5.0`). CI creates the GitHub release with its ad-hoc DMG. The bump carries the full notes in `docs/releases/v0.5.0.md` (CI puts them on the release) and a short entry in `src/core/whats-new/notes.ts`, which riders see once after the update; a test fails a bump without one.
 2. Run `npm run dist:signed -- --upload`. It replaces CI's DMG with the signed one and attaches the zip, its blockmap and `latest-mac.yml`. Once `latest-mac.yml` is on the release, installed copies (0.5.0 and later) find the update within six hours, or right away from **Settings → About → Check for updates**.
