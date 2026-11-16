@@ -79,14 +79,16 @@ describe('intervals.icu activities', () => {
   it('counts activities from Strava without passing them on, and drops malformed ones', async () => {
     const { client } = await fakeIntervals([
       { id: 'i1', start_date_local: '2026-11-18T07:00:00', type: 'Run', source: 'STRAVA', _note: 'STRAVA activities are not available via the API' },
-      { id: 'i2', start_date_local: '2026-11-18T09:00:00', type: 'Ride' },
+      // no moving time, and not from Strava: malformed, not blamed on Strava
+      { id: 'i2', start_date_local: '2026-11-18T09:00:00', type: 'Ride', source: 'GARMIN_CONNECT' },
+      { id: 'i5', start_date_local: '2026-11-18T09:00:00', type: 'Ride', moving_time: 9_999_999 },
       { id: 'i3', name: 'No date', moving_time: 60 },
       { ...garminRun, id: 'i4', average_heartrate: 900, distance: -5, name: 'x'.repeat(400) },
       42,
     ])
     client.configure({ apiKey: 'secret-key-123', athleteId: '0' })
     const res = await client.activities('2026-11-04', '2026-11-18')
-    expect(res.fromStrava).toBe(2)
+    expect(res.fromStrava).toBe(1)
     expect(res.activities).toHaveLength(1)
     expect(res.activities[0]).toMatchObject({ id: 'i4', average_heartrate: null, distance: null, name: '' })
   })

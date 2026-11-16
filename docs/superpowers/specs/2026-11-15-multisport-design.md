@@ -234,7 +234,7 @@ effort: easy
 
 ### 4.4 The import report and its messages
 After every import, a report lists **every file** with one line saying where it went: "on Tue 2 Dec", "in the library", "in plan Base 1", or "skipped" with the reason. Errors and warnings name the line:
-- `line 6: "400m" is 400 minutes. For metres write 400mtr.` (a warning on any run or swim step of 100 m or more written in minutes)
+- `line 6: "400m" is 400 minutes. For metres write 400mtr.` (a warning on any swim step written in minutes, and on a run step of 100 minutes or more; changed after review)
 - `line 2: sport must be run, swim or other.`
 - `line 9: a repeat inside a repeat isn't supported. Write the inner set out.`
 - `line 4: one target per step. "Z2 HR 4:30/km Pace" has two.`

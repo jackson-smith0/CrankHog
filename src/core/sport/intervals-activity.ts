@@ -30,8 +30,8 @@ export interface IcuActivity {
   external_id: string | null
 }
 
-/** What the sync needs to know about an activity already stored. */
-export interface StoredActivityRef {
+/** What the sync needs to know about an activity already stored. One it synced before carries its fields, so an unchanged one isn't written again. */
+export interface StoredActivityRef extends Partial<Omit<SyncedActivity, 'id' | 'startedAt' | 'externalId'>> {
   id: string
   startedAt: number
   source?: 'fit' | 'intervals' | 'manual'
@@ -70,8 +70,13 @@ export interface SyncPlan {
   attach: { id: string; externalId: string; icuLoad: number | null }[]
   /** Activities an earlier sync added that intervals.icu no longer has. */
   remove: string[]
-  counts: { added: number; updated: number; removed: number; ownUploads: number; rides: number; hidden: number }
+  counts: { added: number; updated: number; unchanged: number; removed: number; ownUploads: number; rides: number; hidden: number }
 }
+
+const SYNCED_FIELDS = ['startedAt', 'sport', 'name', 'movingS', 'distanceM', 'avgHr', 'maxHr', 'icuLoad', 'group'] as const
+
+/** Whether a stored row already says what intervals.icu says. */
+const unchanged = (stored: StoredActivityRef, next: SyncedActivity) => SYNCED_FIELDS.every((k) => (stored[k] ?? null) === (next[k] ?? null))
 
 /** Two activities starting this close together are the same activity. */
 export const SAME_ACTIVITY_MS = 90_000
@@ -94,7 +99,8 @@ export function icuStart(a: Pick<IcuActivity, 'start_date' | 'start_date_local'>
 const typeName = (t: string | null) => (t ? t.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()).replace(/ (\w)/g, (_, c: string) => ` ${c.toLowerCase()}`) : 'Activity')
 
 export function planIntervalsSync(input: SyncInput): SyncPlan {
-  const counts = { added: 0, updated: 0, removed: 0, ownUploads: 0, rides: 0, hidden: 0 }
+  const counts = { added: 0, updated: 0, unchanged: 0, removed: 0, ownUploads: 0, rides: 0, hidden: 0 }
+  const remove: string[] = []
   const put: SyncedActivity[] = []
   const attach: SyncPlan['attach'] = []
   const near = (t: number, list: readonly { startedAt: number }[]) => list.some((x) => Math.abs(x.startedAt - t) < SAME_ACTIVITY_MS)
@@ -116,8 +122,10 @@ export function planIntervalsSync(input: SyncInput): SyncPlan {
     if (startedAt === null) continue
     const known = byExternal.get(a.id)
     if (known && known.source !== 'intervals') continue
-    if (!known && near(startedAt, input.rides)) {
+    if (near(startedAt, input.rides)) {
       counts.rides++
+      // its ride reached the history after it was synced (its FIT file, say): the ride counts, so this goes
+      if (known) remove.push(known.id)
       continue
     }
     if (!known) {
@@ -128,7 +136,7 @@ export function planIntervalsSync(input: SyncInput): SyncPlan {
         continue
       }
     }
-    put.push({
+    const row: SyncedActivity = {
       id: syncedId(a.id),
       startedAt,
       sport: a.type ?? 'Workout',
@@ -140,13 +148,18 @@ export function planIntervalsSync(input: SyncInput): SyncPlan {
       icuLoad: a.icu_training_load,
       group: groupOfIntervalsType(a.type),
       externalId: a.id,
-    })
+    }
+    if (known && unchanged(known, row)) {
+      counts.unchanged++
+      continue
+    }
+    put.push(row)
     if (known) counts.updated++
     else counts.added++
   }
 
   const [from, to] = input.window
-  const remove = input.existing.filter((e) => e.source === 'intervals' && e.externalId && !seen.has(e.externalId) && e.startedAt >= from && e.startedAt < to).map((e) => e.id)
+  remove.push(...input.existing.filter((e) => e.source === 'intervals' && e.externalId && !seen.has(e.externalId) && e.startedAt >= from && e.startedAt < to).map((e) => e.id))
   counts.removed = remove.length
   return { put, attach, remove, counts }
 }

@@ -124,13 +124,14 @@ effort: easy
 ## How the calendar's numbers are worked out
 
 - **Time.** Time steps add up as written. Distance steps are converted with your threshold run pace, or swim threshold pace (CSS), from **Settings, Athlete**. A step with no target counts as easy: 75 % of threshold for runs, 80 % for swims. Without the threshold, a distance-only session shows its distance and no time. Missing is not zero.
+- **Other sessions.** A squash game or a gym session has no pace to go by, so a distance step there gets no time, and a time step no distance.
 - **Load.** On the same scale as ride TSS (an hour at threshold is 100). Pace steps score by pace against threshold; heart-rate steps by your threshold heart rate; zone steps by the zone's middle; a session with no steps by its effort. Runs and other sports score intensity squared, swims cubed. Without what it needs, the load is blank, never 0.
 
 ## What the report says, and what to do
 
 | Message | Meaning |
 |---|---|
-| `line 6: "400m" is 400 minutes. For metres write 400mtr.` | A warning on a run or swim step of 100 minutes or more written with `m` |
+| `line 6: "400m" is 400 minutes. For metres write 400mtr.` | A warning on any swim step written with `m` (a swim is counted in lengths), and on a run step of 100 minutes or more |
 | `line 2: sport must be run, swim or other.` | The `sport:` line names something else. A bike workout has no `sport:` line |
 | `line 9: a repeat inside a repeat isn't supported. Write the inner set out, or leave a blank line before a new set.` | A second count line came before the first set ended |
 | `line 4: one target per step. "Z2 HR 4:30/km Pace" has two.` | Pick one target for the step |

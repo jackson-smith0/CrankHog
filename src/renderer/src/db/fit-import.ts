@@ -87,9 +87,15 @@ async function importLeg(fileName: string, decoded: DecodedFit, into: { starts: 
     imported: { fileName, device: imp.device ?? undefined },
     elevationGainM: imp.elevationGainM,
   })
-  await db().transaction('rw', db().rides, db().rideStreams, async () => {
+  await db().transaction('rw', db().rides, db().rideStreams, db().activities, async () => {
     await db().rides.put(fin.summary)
     await db().rideStreams.put(fin.streams)
+    // the same ride synced from intervals.icu earlier: the ride, with its streams, takes its place
+    await db()
+      .activities.where('startedAt')
+      .between(imp.startedAt - SAME_RIDE_MS, imp.startedAt + SAME_RIDE_MS)
+      .filter((a) => a.source === 'intervals')
+      .delete()
   })
   starts.push(imp.startedAt)
   report.imported.push({ name, rideId })

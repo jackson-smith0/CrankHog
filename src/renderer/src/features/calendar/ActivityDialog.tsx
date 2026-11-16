@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { formatSportDistance } from '@core/sport/format'
 import { activityGroup, SPORT_GROUP_LABEL } from '@core/sport/group'
-import { EFFORT_LABEL, activityLoad } from '@core/sport/load'
+import { EFFORT_LABEL, activityLoad, effortLoad } from '@core/sport/load'
 import { dateKey } from '@core/workout/schedule'
 import type { OtherActivity } from '../../db/db'
 import { removeActivity, removeWarning, updateManualActivity } from '../../plan/activities-repo'
@@ -34,7 +34,8 @@ const draftOf = (a: OtherActivity, units: 'metric' | 'imperial'): SessionDraft =
   time: String(Math.round(a.movingS / 60)),
   distance: a.distanceM ? formatSportDistance(a.distanceM, activityGroup(a), units) : '',
   effort: a.effort ?? 'moderate',
-  load: a.effort === undefined && typeof a.manualLoad === 'number' ? String(a.manualLoad) : '',
+  // a load the rider typed is one that isn't what the effort gives for that time
+  load: typeof a.manualLoad === 'number' && a.manualLoad !== effortLoad(a.movingS, a.effort) ? String(a.manualLoad) : '',
   notes: a.notes ?? '',
 })
 

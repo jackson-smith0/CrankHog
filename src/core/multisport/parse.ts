@@ -182,8 +182,9 @@ function readHeaderValue(key: string, value: string, line: number, header: Sessi
     }
     case 'distance': {
       const t = v.replace(/\s+/g, '').toLowerCase()
-      const len = parseLength(t) ?? parseLength(t.replace(/m$/, 'mtr'))
-      if (len?.distanceM) header.distanceM = len.distanceM
+      // a distance is never a time, so here "5000m" can only mean metres
+      const metres = parseLength(t)?.distanceM ?? parseLength(t.replace(/m$/, 'mtr'))?.distanceM
+      if (metres) header.distanceM = metres
       else errors.push({ line, text: `distance must have a unit, like 8km, 5mi, 2000mtr or 1650y.` })
       return
     }
@@ -249,7 +250,8 @@ export function parseSession(fileName: string, text: string): ParsedSession {
       }
       const { target, rest, note } = readTarget(words, n, errors)
       const step: SessionStep = { line: n, ...len, ...(target ? { target } : {}), ...(rest ? { rest } : {}), ...(note.length ? { note: note.join(' ') } : {}) }
-      if (len.durationS && header.sport !== 'other' && /^\d+(?:\.\d+)?m$/i.test(first) && len.durationS >= 100 * 60) {
+      // "50m" is 50 minutes. A swim is counted in lengths, so any minutes there gets the warning; a run's only from 100 up
+      if (len.durationS && header.sport !== 'other' && /^\d+(?:\.\d+)?m$/i.test(first) && (header.sport === 'swim' || len.durationS >= 100 * 60)) {
         warnings.push({ line: n, text: `"${first}" is ${first.slice(0, -1)} minutes. For metres write ${first.slice(0, -1)}mtr.` })
       }
       current ??= { repeat: 1, steps: [] }

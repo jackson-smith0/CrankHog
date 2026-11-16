@@ -7,6 +7,12 @@ describe('sportLabel', () => {
     expect(sportLabel('racket')).toBe('Racket sport')
   })
 
+  it('names a trail run by its sub-sport, but not a hike on a trail', () => {
+    expect(sportLabel('running', 'trail')).toBe('Trail run')
+    expect(sportLabel('hiking', 'trail')).toBe('Hike')
+    expect(sportLabel('swimming', 'open_water')).toBe('Open water swim')
+  })
+
   it('reads known and unknown sports plainly', () => {
     expect(sportLabel('running')).toBe('Run')
     expect(sportLabel('kayaking')).toBe('Kayaking')

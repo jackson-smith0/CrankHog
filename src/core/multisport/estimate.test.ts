@@ -55,6 +55,18 @@ describe('estimateSession', () => {
     expect(without.warnings[0]).toMatch(/no threshold run pace is set: it shows its distance but no time or load/)
   })
 
+  it('gives an "other" session no distance from run pace, and no time for its distance steps', () => {
+    const p = parseSession('x.txt', 'sport: other\n\n- 20m Z3 HR\n- 2km easy')
+    const e = estimateSession('other', p.sections, p.header, thresholds)
+    // the 20 minutes have no distance, so neither has the session: missing is not zero
+    expect([e.durationS, e.distanceM, e.load]).toEqual([null, null, null])
+    expect(e.warnings).toEqual(['Distance steps in an "other" session have no pace to go by, so it shows its distance but no time. Give them a time, or a pace target.'])
+    const timed = parseSession('x.txt', 'sport: other\n\n- 45m Z3 HR')
+    const t = estimateSession('other', timed.sections, timed.header, thresholds)
+    expect([t.durationS, t.distanceM]).toEqual([2700, null])
+    expect(t.load).toBeCloseTo(63.5, 1)
+  })
+
   it('needs threshold heart rate for bpm targets', () => {
     const p = parseSession('x.txt', 'sport: run\n\n- 30m 140-150bpm')
     const e = estimateSession('run', p.sections, p.header, { runPaceSPerKm: 255 })

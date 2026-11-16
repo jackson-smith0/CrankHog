@@ -31,6 +31,7 @@ interface CachedOverview {
  * per change in the data or the coach. Either can go to the coach chat.
  */
 export function FitnessOverviewCard({ rideCount }: { rideCount: number | undefined }) {
+  const otherSports = (useLiveQuery(() => db().activities.count(), []) ?? 0) > 0
   const ftp = useLiveQuery(() => db().ftpHistory.count(), [])
   const lastRide = useLiveQuery(() => db().rides.orderBy('startedAt').last().then((r) => r?.id ?? null), [rideCount])
   const facts = useLiveQuery(() => fitnessFacts(), [rideCount, ftp])
@@ -129,7 +130,14 @@ export function FitnessOverviewCard({ rideCount }: { rideCount: number | undefin
             <Sparkles className="size-4 text-accent" /> Overview
           </span>
         }
-        subtitle={byCoach ? `${persona.name}'s read of the numbers below.` : 'A plain read of the numbers below.'}
+        subtitle={
+          // the overview (and the coach) reads rides recorded here only; the tiles below count every sport
+          otherSports
+            ? `${byCoach ? `${persona.name}'s read` : 'A plain read'} of your rides only. The numbers below count every sport, so they can be higher.`
+            : byCoach
+              ? `${persona.name}'s read of the numbers below.`
+              : 'A plain read of the numbers below.'
+        }
         actions={
           <>
             {running ? (

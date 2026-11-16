@@ -47,4 +47,23 @@ describe('ActivityDialog', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(await db().activities.get(a.id)).toMatchObject({ movingS: 3600, manualLoad: 80, label: 'Squash' })
   })
+
+  it('keeps a load the rider typed when they edit something else', async () => {
+    const a = await addManualActivity({ date: '2026-11-14', group: 'other', label: 'Squash', durationS: 2700, effort: 'moderate', load: 95 })
+    const onClose = vi.fn()
+    render(<ActivityDialog activity={a} onClose={onClose} />)
+    fireEvent.click(screen.getByTestId('activity-edit'))
+    expect((screen.getByTestId('activity-load') as HTMLInputElement).value).toBe('95')
+    fireEvent.change(screen.getByTestId('activity-notes'), { target: { value: 'Lost 3-1' } })
+    await act(async () => fireEvent.click(screen.getByTestId('activity-save')))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(await db().activities.get(a.id)).toMatchObject({ manualLoad: 95, notes: 'Lost 3-1' })
+  })
+
+  it('leaves the load empty to edit when it came from how hard it was', async () => {
+    const a = await addManualActivity({ date: '2026-11-14', group: 'run', durationS: 3600, effort: 'easy' })
+    render(<ActivityDialog activity={a} onClose={() => undefined} />)
+    fireEvent.click(screen.getByTestId('activity-edit'))
+    expect((screen.getByTestId('activity-load') as HTMLInputElement).value).toBe('')
+  })
 })

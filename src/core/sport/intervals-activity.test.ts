@@ -67,6 +67,26 @@ describe('planIntervalsSync', () => {
   })
 })
 
+describe('planIntervalsSync: a ride that arrives later, and activities that haven’t changed', () => {
+  it('drops an outdoor ride it synced once the same ride is in the history, so it counts once', () => {
+    const synced: StoredActivityRef = { id: 'icu-r', startedAt: t(9), source: 'intervals', externalId: 'r' }
+    const p = plan([icu('r', t(9), { type: 'GravelRide' })], [synced], [{ startedAt: t(9) + 20_000 }])
+    expect(p.put).toEqual([])
+    expect(p.remove).toEqual(['icu-r'])
+    expect(p.counts).toMatchObject({ rides: 1, removed: 1 })
+  })
+
+  it('leaves an activity alone when intervals.icu says nothing new about it', () => {
+    const first = plan([icu('i1', t(15))])
+    const stored: StoredActivityRef = { ...first.put[0]!, source: 'intervals' }
+    const again = plan([icu('i1', t(15))], [stored])
+    expect(again.put).toEqual([])
+    expect(again.counts).toMatchObject({ added: 0, updated: 0, unchanged: 1 })
+    // a new load is a change
+    expect(plan([icu('i1', t(15), { icu_training_load: 60 })], [stored]).counts).toMatchObject({ updated: 1, unchanged: 0 })
+  })
+})
+
 describe('icuStart', () => {
   it('uses the UTC start when given, else the local start as local time', () => {
     expect(icuStart({ start_date: '2026-11-18T15:00:00Z', start_date_local: '2026-11-18T07:00:00' })).toBe(t(15))

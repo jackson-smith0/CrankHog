@@ -74,6 +74,19 @@ describe('the report messages', () => {
     expect(messages('sport: run\n\n- 10m Z2 HR\n- 400m 4:00/km Pace').warnings).toEqual(['line 4: "400m" is 400 minutes. For metres write 400mtr.'])
   })
 
+  it('warns about every length written in minutes in a swim, where 50m is surely meant as metres', () => {
+    expect(messages('sport: swim\n\nMain 4x\n- 50m drill\n- 15s rest').warnings).toEqual(['line 4: "50m" is 50 minutes. For metres write 50mtr.'])
+    // a run's 10m is ten minutes, as meant
+    expect(messages('sport: run\n\n- 10m Z2 HR').warnings).toEqual([])
+  })
+
+  it('reads a distance header written in metres with m', () => {
+    const p = parse('sport: run\ndistance: 5000m\neffort: easy')
+    expect(p.errors).toEqual([])
+    expect(p.header.distanceM).toBe(5000)
+    expect(parse('sport: run\ndistance: 5 km').header.distanceM).toBe(5000)
+  })
+
   it('refuses a sport it doesn’t know, and a ride', () => {
     expect(messages('name: x\nsport: tennis\n\n- 10m').errors).toEqual(['line 2: sport must be run, swim or other.'])
     expect(messages('sport: ride\n\n- 10m').errors[0]).toMatch(/A bike workout has no sport line/)

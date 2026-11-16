@@ -42,10 +42,11 @@ export interface SessionEstimate {
 const M_PER_MI = 1609.344
 const M_PER_YD = 0.9144
 
-/** Threshold pace in seconds per metre, for the sport, or null. */
+/** Threshold pace in seconds per metre, for the sport, or null. A squash game or a gym session has no pace to go by. */
 function thresholdSPerM(sport: SessionSport, t: SessionThresholds): number | null {
   if (sport === 'swim') return t.swimCssSPer100m && t.swimCssSPer100m > 0 ? t.swimCssSPer100m / 100 : null
-  return t.runPaceSPerKm && t.runPaceSPerKm > 0 ? t.runPaceSPerKm / 1000 : null
+  if (sport === 'run') return t.runPaceSPerKm && t.runPaceSPerKm > 0 ? t.runPaceSPerKm / 1000 : null
+  return null
 }
 
 /** A named pace in seconds per metre: the middle of its range. */
@@ -138,7 +139,10 @@ export function estimateSession(sport: SessionSport, sections: readonly SessionS
     if (f === null) loadUnknown = true
     total = total !== null && secs !== null && f !== null ? total + load(secs / 3600, f, sport) : null
   }
-  if (distanceStepsUntimed && thrMissing) warnings.push(`This is a ${sportName} with distance steps, and no ${thrName} is set: it shows its distance but no time. Set it in Settings, Athlete.`)
+  if (sport === 'other') {
+    // no threshold to set: say only what can't be worked out
+    if (distanceStepsUntimed) warnings.push('Distance steps in an "other" session have no pace to go by, so it shows its distance but no time. Give them a time, or a pace target.')
+  } else if (distanceStepsUntimed && thrMissing) warnings.push(`This is a ${sportName} with distance steps, and no ${thrName} is set: it shows its distance but no time. Set it in Settings, Athlete.`)
   else if (loadUnknown && thrMissing && steps.some((s) => s.target?.kind === 'pace')) warnings.push(`Pace targets need your ${thrName} to score the load. Set it in Settings, Athlete.`)
   else if (loadUnknown && steps.some((s) => s.target?.kind === 'bpm')) warnings.push('Heart-rate targets in bpm need your threshold heart rate to score the load. Set it in Settings, Athlete.')
   return {

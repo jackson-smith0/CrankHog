@@ -14,6 +14,9 @@ const SPORT: Record<string, string> = {
   tennis: 'Tennis',
 }
 
+/** Sub-sports that only name the activity within one sport: "trail" is a trail run when running, but a hike on a trail is still a hike. */
+const SUB_SPORT_OF: Record<string, string> = { trail: 'running', open_water: 'swimming' }
+
 /** Sub-sports that name the activity better than its sport does: a FIT squash game is sport "racket". */
 const SUB_SPORT: Record<string, string> = {
   squash: 'Squash',
@@ -31,7 +34,7 @@ const plain = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g
 
 /** "running" → "Run"; "racket" with sub-sport "squash" → "Squash"; an unknown FIT sport reads as itself ("kayaking" → "Kayaking"). */
 export function sportLabel(sport: string, subSport?: string | null): string {
-  if (subSport && SUB_SPORT[subSport]) return SUB_SPORT[subSport]
+  if (subSport && SUB_SPORT[subSport] && (!SUB_SPORT_OF[subSport] || SUB_SPORT_OF[subSport] === sport)) return SUB_SPORT[subSport]
   return SPORT[sport] ?? plain(sport)
 }
 

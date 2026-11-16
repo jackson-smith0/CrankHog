@@ -242,8 +242,10 @@ function toActivity(raw: unknown): IntervalsActivity | 'strava' | null {
   const start = str(a.start_date_local, 40)
   if (!id || !start || !DATE.test(start.slice(0, 10))) return null
   const source = str(a.source, 40)
+  // only what intervals.icu says came from Strava is Strava's; anything else without a usable moving time is malformed
+  if (source === 'STRAVA') return 'strava'
   const moving = num(a.moving_time, 7 * 86_400)
-  if (source === 'STRAVA' || moving === null) return 'strava'
+  if (moving === null) return null
   return {
     id,
     start_date_local: start,
