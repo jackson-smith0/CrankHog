@@ -1,5 +1,5 @@
 import type { ProjectedPmcRow } from '@core/metrics/pmc'
-import { formatSportDistance } from '@core/sport/format'
+import { formatSportDistance, formatSwimMetres } from '@core/sport/format'
 import { SPORT_GROUP_LABEL } from '@core/sport/group'
 import { sportsIn, type VolumeSide, type VolumeTotals } from '@core/workout/volume'
 import { useSettings } from '../../stores/settings'
@@ -34,6 +34,7 @@ function Row({ label, side }: { label: string; side: VolumeSide }) {
 /**
  * Ride, Run, Swim and Other, one line each for the sports with anything
  * planned or done: time done against time planned, and the distance done.
+ * A swim is counted in metres instead: metres done against metres planned.
  */
 function SportRows({ v }: { v: VolumeTotals }) {
   const units = useSettings((s) => s.units)
@@ -48,11 +49,24 @@ function SportRows({ v }: { v: VolumeTotals }) {
           <li key={g} className="flex items-center gap-1.5" data-sport={g}>
             <SportIcon sport={g} className="size-3 shrink-0 text-ink-dim" aria-hidden />
             <span className="w-10 shrink-0 text-ink-dim">{SPORT_GROUP_LABEL[g]}</span>
-            <span className="tabular">
-              {time(done.durationS)}
-              {planned.sessions > 0 && <span className="text-ink-faint"> / {time(planned.durationS)}</span>}
-            </span>
-            {done.distanceM > 0 && g !== 'other' && <span className="ml-auto tabular text-ink-faint">{formatSportDistance(done.distanceM, g, units)}</span>}
+            {g === 'swim' ? (
+              // swims are planned by distance, often with no time: metres done against metres planned
+              <>
+                <span className="tabular">
+                  {formatSwimMetres(done.distanceM)}
+                  {planned.sessions > 0 && <span className="text-ink-faint"> / {formatSwimMetres(planned.distanceM)}</span>}
+                </span>
+                {done.durationS > 0 && <span className="ml-auto tabular text-ink-faint">{time(done.durationS)}</span>}
+              </>
+            ) : (
+              <>
+                <span className="tabular">
+                  {time(done.durationS)}
+                  {planned.sessions > 0 && <span className="text-ink-faint"> / {time(planned.durationS)}</span>}
+                </span>
+                {done.distanceM > 0 && g !== 'other' && <span className="ml-auto tabular text-ink-faint">{formatSportDistance(done.distanceM, g, units)}</span>}
+              </>
+            )}
           </li>
         )
       })}

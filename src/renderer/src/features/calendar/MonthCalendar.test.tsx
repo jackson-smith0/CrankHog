@@ -107,6 +107,21 @@ describe('MonthCalendar', () => {
     )
   })
 
+  it('counts a week’s swimming in metres, since swims are often planned with no time', async () => {
+    const day = inMonth(-1) ?? inMonth(1)!
+    // a CSS set planned by distance alone, and a swim done
+    await db().schedule.put({ id: 'ps', date: day, workoutId: null, workout: null, name: 'CSS 10x100', source: 'manual', sport: 'swim', session: { distanceM: 1800 }, createdAt: 1 })
+    await db().activities.put({ id: 'sw', startedAt: dayMs(day, 7), sport: 'swimming', subSport: 'lap_swimming', name: 'Morning swim', movingS: 2400, distanceM: 2000, avgHr: null, maxHr: null, hrLoad: 40, trainingEffect: null, garminLoad: null, device: null, fileName: 'swim.fit', source: 'fit', group: 'swim' })
+    render(<MonthCalendar />)
+    await waitFor(
+      () => {
+        const row = screen.getAllByTestId('week-volume').map((w) => w.querySelector('[data-sport="swim"]')).find(Boolean)
+        expect(row?.textContent).toMatch(/Swim2,000 m \/ 1,800 m40m/)
+      },
+      { timeout: 5000 },
+    )
+  })
+
   it('shows fitness and form at each week’s end, projected after today', async () => {
     // a ride last month, so every week of this one has fitness
     await db().rides.put(ride('old', addDays(today, -35), 'builtin:sweet-spot-3x12', 300))
