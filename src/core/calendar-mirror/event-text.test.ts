@@ -30,4 +30,10 @@ describe('mirrorEvent', () => {
     const e = mirrorEvent({ id: 's4', date: '2026-11-20', name: 'Swim', sport: 'swim', distanceM: 1500 }, 'metric')
     expect(e.description).not.toMatch(/[!\u{1F300}-\u{1FAFF}]/u)
   })
+
+  it('gives swims in metres or yards, the way the calendar does', () => {
+    const swim = (units: 'metric' | 'imperial') => mirrorEvent({ id: 's5', date: '2026-11-21', name: 'Swim', sport: 'swim', distanceM: 1800 }, units).description.split('\n\n')[0]
+    expect(swim('metric')).toBe('Swim · 1,800 m')
+    expect(swim('imperial')).toBe('Swim · 1,969 yd')
+  })
 })

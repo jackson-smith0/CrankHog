@@ -34,6 +34,10 @@ interface MockState {
   refuseRefresh: boolean
   grantedScope: string
   calls: string[]
+  /** The address Google's ID token carries for the next sign-in. */
+  email: string
+  /** Event titles Google refuses outright (400), one change at a time. */
+  refuseTitles: Set<string>
 }
 
 const idToken = (claims: object) => `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`
@@ -64,7 +68,7 @@ async function startMock(state: MockState): Promise<{ server: Server; base: stri
         access_token: `access-${n}`,
         expires_in: 3599,
         scope: state.grantedScope,
-        ...(p.grant_type === 'authorization_code' ? { refresh_token: 'refresh-1', id_token: idToken({ email: 'rider@example.com' }) } : {}),
+        ...(p.grant_type === 'authorization_code' ? { refresh_token: 'refresh-1', id_token: idToken({ email: state.email }) } : {}),
       })
     }
     if (url.pathname === '/revoke') {
@@ -87,6 +91,10 @@ async function startMock(state: MockState): Promise<{ server: Server; base: stri
     }
     const cal = state.calendars.get(path[1] ?? '')
     if (!cal) return send(404, { error: { message: 'Not Found' } })
+    if (path.length === 2 && req.method === 'GET') return send(200, { id: path[1], summary: 'CrankHog' })
+    if ((req.method === 'POST' || req.method === 'PUT') && state.refuseTitles.has((JSON.parse(body) as StoredEvent).summary)) {
+      return send(400, { error: { code: 400, message: 'Invalid start time.' } })
+    }
     if (path[2] === 'events' && path.length === 3 && req.method === 'GET') {
       const items = [...cal.values()].filter((e) => e.status === 'confirmed')
       return send(200, { items })
@@ -124,7 +132,7 @@ let secrets: SecretStore
 let nowS: number
 
 beforeEach(async () => {
-  state = { tokenCalls: [], revoked: [], calendars: new Map(), calendarsCreated: 0, failNext: null, refuseRefresh: false, grantedScope: `openid ${CALENDAR_SCOPE} https://www.googleapis.com/auth/userinfo.email`, calls: [] }
+  state = { tokenCalls: [], revoked: [], calendars: new Map(), calendarsCreated: 0, failNext: null, refuseRefresh: false, grantedScope: `openid ${CALENDAR_SCOPE} https://www.googleapis.com/auth/userinfo.email`, calls: [], email: 'rider@example.com', refuseTitles: new Set() }
   mock = await startMock(state)
   endpoints = { authorize: `${mock.base}/auth`, token: `${mock.base}/token`, revoke: `${mock.base}/revoke`, calendar: `${mock.base}/calendar/v3` }
   secrets = SecretStore.inDir(mkdtempSync(join(tmpdir(), 'crankhog-google-')), plainCipher)
@@ -302,6 +310,64 @@ describe('the CrankHog calendar', () => {
     const last = sync.request({ windowStart: '2026-11-01', events: [ev('c', '2026-11-20')] })
     await Promise.all([first, last])
     expect(events().map((e) => e.id)).toEqual([googleEventId('c')])
+  })
+
+  it('lets the other changes through when Google refuses one, and says which', async () => {
+    const sync = new GoogleCalendarSync(await signedIn())
+    state.refuseTitles.add('Workout b')
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18'), ev('b', '2026-11-19'), ev('c', '2026-11-20')] })
+    expect(events().map((e) => e.summary)).toEqual(['Workout a', 'Workout c'])
+    expect(sync.status()).toMatchObject({ lastError: 'Google Calendar refused 1 of 3 changes; the rest went through. The first: Invalid start time.', lastSyncAt: expect.any(Number) })
+    state.refuseTitles.clear()
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18'), ev('b', '2026-11-19'), ev('c', '2026-11-20')] })
+    expect(events()).toHaveLength(3)
+    expect(sync.status().lastError).toBeUndefined()
+  })
+
+  it('keeps one calendar per account, so switching back and forth makes no second one', async () => {
+    const g = await signedIn()
+    const sync = new GoogleCalendarSync(g)
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
+    const first = sync.status().calendarId
+    expect(first).toBe('cal1@group.calendar.google.com')
+    state.email = 'other@example.com'
+    await g.connect(fakeBrowser)
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
+    expect(sync.status().calendarId).toBe('cal2@group.calendar.google.com')
+    state.email = 'rider@example.com'
+    await g.connect(fakeBrowser)
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
+    expect(sync.status().calendarId).toBe(first)
+    expect(state.calendarsCreated).toBe(2)
+  })
+
+  it('carries on with the calendar a restored backup knew, on a new Mac', async () => {
+    await new GoogleCalendarSync(await signedIn()).request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
+    // a new Mac: nothing stored in main, only the calendar id from the backup
+    secrets = SecretStore.inDir(mkdtempSync(join(tmpdir(), 'crankhog-google-')), plainCipher)
+    const sync = new GoogleCalendarSync(await signedIn())
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18'), ev('b', '2026-11-19')], calendarHint: 'cal1@group.calendar.google.com' })
+    expect(state.calendarsCreated).toBe(1)
+    expect(events().map((e) => e.summary)).toEqual(['Workout a', 'Workout b'])
+    expect(sync.status().calendarId).toBe('cal1@group.calendar.google.com')
+  })
+
+  it('makes a new calendar when the backed-up one is gone', async () => {
+    const sync = new GoogleCalendarSync(await signedIn())
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')], calendarHint: 'deleted@group.calendar.google.com' })
+    expect(state.calendarsCreated).toBe(1)
+    expect(sync.status().calendarId).toBe('cal1@group.calendar.google.com')
+  })
+
+  it('keeps using the calendar stored before calendars were kept per account', async () => {
+    const g = await signedIn()
+    state.calendars.set('old@group.calendar.google.com', new Map())
+    secrets.setJson('google.calendar', { email: 'rider@example.com', calendarId: 'old@group.calendar.google.com' })
+    const sync = new GoogleCalendarSync(g)
+    await sync.request({ windowStart: '2026-11-01', events: [ev('a', '2026-11-18')] })
+    expect(state.calendarsCreated).toBe(0)
+    expect(sync.status().calendarId).toBe('old@group.calendar.google.com')
+    expect(secrets.getJson('google.calendar')).toBeNull()
   })
 
   it('says so when it isn’t signed in', async () => {

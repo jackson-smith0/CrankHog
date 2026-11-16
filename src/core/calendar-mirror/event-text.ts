@@ -3,7 +3,8 @@
 // own notes. Plain text, sentence case, no emoji.
 import { SPORT_GROUP_LABEL, type SportGroup } from '../sport/group'
 import { EFFORT_LABEL, type Effort } from '../sport/load'
-import { formatSpan, type UnitSystem } from '../units'
+import { formatSportDistance } from '../sport/format'
+import type { UnitSystem } from '../units'
 import type { DateKey } from '../workout/schedule'
 import type { MirrorEvent } from './mirror'
 
@@ -42,7 +43,7 @@ export function plainDuration(s: number): string {
 export function mirrorEvent(src: MirrorSource, units: UnitSystem): MirrorEvent {
   const facts: string[] = [src.label && src.label !== src.name ? `${SPORT_GROUP_LABEL[src.sport]}: ${src.label}` : SPORT_GROUP_LABEL[src.sport]]
   if (src.durationS && src.durationS > 0) facts.push(plainDuration(src.durationS))
-  if (src.distanceM && src.distanceM > 0) facts.push(formatSpan(src.distanceM, units))
+  if (src.distanceM && src.distanceM > 0) facts.push(formatSportDistance(src.distanceM, src.sport, units))
   if (src.effort) facts.push(EFFORT_LABEL[src.effort])
   if (src.tss != null && src.tss > 0) facts.push(`TSS ${Math.round(src.tss)}`)
   else if (src.load != null && src.load > 0) facts.push(`Load ${Math.round(src.load)}`)
