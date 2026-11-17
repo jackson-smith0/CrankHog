@@ -1,7 +1,11 @@
 import 'fake-indexeddb/auto'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TEMPLATE_CSV } from '@core/plan-import/template'
+import { defaultStart } from '@core/plan-import/model'
+import { nextMonday } from '@core/workout/plan'
 import { addDays, dateKey } from '@core/workout/schedule'
+import { addMark } from '../../plan/day-marks-repo'
 import type { CrankHogBridge } from '@shared/ipc/contract'
 import { db } from '../../db/db'
 import { NewPlanFlow } from './NewPlanFlow'
@@ -79,5 +83,118 @@ describe('NewPlanFlow', () => {
     render(<NewPlanFlow onClose={() => undefined} onCreated={() => undefined} />)
     fireEvent.click(screen.getByTestId('new-plan-next'))
     expect(screen.getByText('Name the event, or choose No event.')).toBeTruthy()
+  })
+
+  it('imports the plan template without AI: a review first, then the plan on the calendar', async () => {
+    const onCreated = vi.fn()
+    render(<NewPlanFlow onClose={() => undefined} onCreated={onCreated} />)
+    fireEvent.click(screen.getByText('No event'))
+    fireEvent.click(screen.getByTestId('new-plan-next'))
+    fireEvent.click(screen.getByTestId('new-plan-document'))
+    const csv = new File([TEMPLATE_CSV], 'Spring block.csv')
+    await act(async () => fireEvent.change(screen.getByTestId('doc-import-file'), { target: { files: [csv] } }))
+    await act(async () => fireEvent.click(await screen.findByTestId('doc-import-template')))
+    // nothing is sent anywhere, and nothing is saved before the rider says so
+    expect(invoke.mock.calls.filter(([c]) => c === 'ai.structured')).toEqual([])
+    expect(screen.getAllByTestId('doc-import-ready-item')).toHaveLength(7)
+    expect(screen.getByTestId('doc-import-summary').textContent).toBe('7 sessions will be made · 3 rides, 2 runs, 1 swim, 1 other')
+    expect(await db().plans.count()).toBe(0)
+    expect((screen.getByTestId('doc-import-name') as HTMLInputElement).value).toBe('Spring block')
+    await act(async () => fireEvent.click(screen.getByTestId('doc-import-save')))
+    await waitFor(() => expect(onCreated).toHaveBeenCalled())
+    const [plan] = await db().plans.toArray()
+    expect(plan).toMatchObject({ name: 'Spring block', onCalendar: true, source: 'files' })
+    expect(plan!.items.map((i) => i.date)).toEqual(['2027-01-04', '2027-01-05', '2027-01-06', '2027-01-07', '2027-01-08', '2027-01-09', '2027-01-10'])
+    expect(onCreated).toHaveBeenCalledWith(plan!.id, { tone: 'good', text: 'Spring block: 7 sessions on your calendar.' })
+  })
+
+  it('says where the document goes before sending it, then shows what will be made and what failed', async () => {
+    const onCreated = vi.fn()
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'ai.status') return { configured: true, provider: 'anthropic', model: 'claude-opus-5-5', breakerOpen: false }
+      if (channel === 'ai.structured') {
+        const it = (week: number, weekday: number, sport: string, name: string, steps: string) => ({ date: null, week, weekday, sport, name, steps, minutes: null, effort: null, notes: null })
+        return {
+          ok: true,
+          value: {
+            planName: 'Coach plan',
+            raceName: 'Gran fondo',
+            raceDate: null,
+            startDate: null,
+            countdown: null,
+            items: [it(1, 1, 'bike', 'Tempo', '- 1h 80%'), it(1, 3, 'run', 'Easy run', '- 40m Z2 HR'), it(2, 1, 'bike', 'Broken', '- 20 minutes hard')],
+            skipped: [{ text: 'Optional brick', reason: 'No length given.' }],
+          },
+        }
+      }
+      throw new Error(channel)
+    })
+    render(<NewPlanFlow onClose={() => undefined} onCreated={onCreated} />)
+    fireEvent.change(screen.getByTestId('new-plan-event-name'), { target: { value: 'Gran fondo' } })
+    fireEvent.change(screen.getByTestId('new-plan-event-date'), { target: { value: addDays(dateKey(Date.now()), 70) } })
+    fireEvent.click(screen.getByTestId('new-plan-next'))
+    fireEvent.click(screen.getByTestId('new-plan-document'))
+    const md = new File(['# Coach plan\n\nWeek 1\n- Tue: 1h tempo\n- Thu: easy run 40 min\n\nWeek 2\n- Tue: 20 minutes hard\n'], 'coach.md')
+    await act(async () => fireEvent.change(screen.getByTestId('doc-import-file'), { target: { files: [md] } }))
+    expect((await screen.findByTestId('doc-import-notice')).textContent).toContain('Anthropic (claude-opus-5-5)')
+    expect(invoke.mock.calls.filter(([c]) => c === 'ai.structured')).toEqual([])
+    await act(async () => fireEvent.click(screen.getByTestId('doc-import-ai')))
+    await screen.findByTestId('doc-import-review')
+    expect(invoke.mock.calls.filter(([c]) => c === 'ai.structured')).toHaveLength(1)
+    expect(screen.getAllByTestId('doc-import-ready-item').map((li) => li.textContent)).toEqual([expect.stringContaining('Tempo'), expect.stringContaining('Easy run')])
+    expect(screen.getByTestId('doc-import-failed-item').textContent).toContain('Broken')
+    expect(screen.getByTestId('doc-import-failed-item').textContent).toContain('Line 1:')
+    expect(screen.getByTestId('doc-import-skipped-item').textContent).toContain('Optional brick')
+    // the rider named the plan and its event: those win over the document's
+    expect((screen.getByTestId('doc-import-name') as HTMLInputElement).value).toBe('Gran fondo plan')
+    expect(await db().plans.count()).toBe(0)
+    await act(async () => fireEvent.click(screen.getByTestId('doc-import-save')))
+    await waitFor(() => expect(onCreated).toHaveBeenCalled())
+    const [plan] = await db().plans.toArray()
+    expect(plan!.items).toHaveLength(2)
+    expect((await db().dayMarks.toArray()).map((m) => [m.name, m.priority])).toEqual([['Gran fondo', 'A']])
+    expect(onCreated).toHaveBeenCalledWith(plan!.id, expect.objectContaining({ tone: 'bad', text: expect.stringContaining('1 from the document wasn’t made') }))
+  })
+
+  it('counts Week 1 back from the document’s race until the rider picks a day, and builds to the race already on the calendar', async () => {
+    const race = addDays(dateKey(Date.now()), 70)
+    const mine = await addMark({ date: race, kind: 'event', name: 'Spring fondo', priority: 'B' })
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'ai.status') return { configured: true, provider: 'anthropic', model: 'claude-opus-5-5', breakerOpen: true }
+      if (channel === 'ai.structured') {
+        const it = (week: number, name: string) => ({ date: null, week, weekday: 1, sport: 'bike', name, steps: '- 1h 70%', minutes: null, effort: null, notes: null })
+        return { ok: true, value: { planName: null, raceName: 'Spring fondo', raceDate: race, startDate: null, countdown: null, items: [it(1, 'Tempo'), it(2, 'Openers')], skipped: [] } }
+      }
+      throw new Error(channel)
+    })
+    const onCreated = vi.fn()
+    render(<NewPlanFlow onClose={() => undefined} onCreated={onCreated} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'No event' }))
+    fireEvent.click(screen.getByTestId('new-plan-next'))
+    fireEvent.click(screen.getByTestId('new-plan-document'))
+    await act(async () => fireEvent.change(screen.getByTestId('doc-import-file'), { target: { files: [new File(['Week 1\nTue tempo\nWeek 2\nTue openers\n'], 'two weeks.md')] } }))
+    // an open in-ride breaker doesn't stop a plan import
+    await act(async () => fireEvent.click(await screen.findByTestId('doc-import-ai')))
+    await screen.findByTestId('doc-import-review')
+    const start = () => (screen.getByTestId('doc-import-start') as HTMLInputElement).value
+    const counted = defaultStart({ items: [{ where: '', week: 2, sport: 'bike', name: '', steps: '' }] }, race)
+    expect(start()).toBe(counted)
+    const toggle = screen.getByRole('switch')
+    await waitFor(() => expect(toggle.closest('label')?.textContent ?? document.body.textContent).toContain('Build to Spring fondo, already on your calendar'))
+    // no race: the weeks run from next Monday; the race back on, from the race again
+    fireEvent.click(toggle)
+    expect(start()).toBe(nextMonday())
+    fireEvent.click(toggle)
+    expect(start()).toBe(counted)
+    // a day the rider picks stays put
+    fireEvent.change(screen.getByTestId('doc-import-start'), { target: { value: addDays(counted, -14) } })
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+    expect(start()).toBe(addDays(counted, -14))
+    await act(async () => fireEvent.click(screen.getByTestId('doc-import-save')))
+    await waitFor(() => expect(onCreated).toHaveBeenCalled())
+    const [plan] = await db().plans.toArray()
+    expect(plan!.eventId).toBe(mine.id)
+    expect(await db().dayMarks.count()).toBe(1)
   })
 })
