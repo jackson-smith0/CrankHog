@@ -7,6 +7,7 @@
 // - A field a device didn't record stays null: missing is never zero.
 
 import type { RideRecord } from '../ride/recorder'
+import { groupOfFitSport } from '../sport/group'
 
 type When = Date | string | number
 
@@ -195,20 +196,27 @@ export interface ImportedOtherActivity {
 }
 
 /**
- * Reads a FIT file that importFitActivity refused as not a ride. Moving time
- * follows the same pause and gap rules as rides; a file with no records falls
- * back to the session's own totals.
+ * Reads a FIT file that importFitActivity refused as not a ride. Runs and
+ * swims follow the rides' pause and gap rules. Anything else (squash, the
+ * gym) only pauses when the watch's timer does: with no GPS or speed,
+ * Garmin's smart recording writes a sample only when something changes, often
+ * minutes apart, and those gaps are play, not rest. A file with no records
+ * falls back to the session's own totals.
  */
 export function importOtherActivity(fit: DecodedFit, opts: { maxGapS?: number } = {}): ImportedOtherActivity {
   const session = fit.sessions?.[0]
-  const { records } = movingRecords(fit, opts.maxGapS ?? DEFAULT_MAX_GAP_S)
+  const sport = session?.sport ?? 'generic'
+  const subSport = session?.sub_sport ?? null
+  const timerOnly = groupOfFitSport(sport, subSport) === 'other'
+  const { records } = movingRecords(fit, timerOnly ? Infinity : (opts.maxGapS ?? DEFAULT_MAX_GAP_S))
   const sessionStart = toSeconds(session?.start_time)
   const timer = num(session?.total_timer_time)
   let startedAt: number
   let movingS: number
   if (records.length > 0) {
     startedAt = records[0]!.ts - 1000
-    movingS = records.length
+    // the watch's own timer total, when the samples stop short of it
+    movingS = timerOnly && timer !== null ? Math.max(records.length, Math.round(timer)) : records.length
   } else if (sessionStart !== null && timer !== null && timer > 0) {
     startedAt = sessionStart * 1000
     movingS = Math.round(timer)
@@ -222,8 +230,8 @@ export function importOtherActivity(fit: DecodedFit, opts: { maxGapS?: number } 
   const aerobic = num(session?.total_training_effect)
   return {
     startedAt,
-    sport: session?.sport ?? 'generic',
-    subSport: session?.sub_sport ?? null,
+    sport,
+    subSport,
     device: deviceOf(fit),
     movingS,
     distanceM: lastDistance ?? num(session?.total_distance),

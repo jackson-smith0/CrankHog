@@ -156,6 +156,44 @@ describe('importOtherActivity', () => {
   it('refuses a file with nothing in it', () => {
     expect(() => importOtherActivity({ sessions: [{ sport: 'running' }] })).toThrow(FitImportError)
   })
+
+  // 90 minutes of squash, recorded "smart": a sample a minute, as Garmin does with no GPS or speed
+  const sparse = (sport: string, subSport: string | undefined, over: Partial<DecodedFit> = {}): DecodedFit => ({
+    sessions: [{ sport, ...(subSport ? { sub_sport: subSport } : {}) }],
+    records: Array.from({ length: 91 }, (_, m) => ({ timestamp: at(m * 60), heart_rate: 140 + (m % 20) })),
+    ...over,
+  })
+
+  it('keeps a squash game whole: only the watch’s timer pauses it, not gaps between samples', () => {
+    const a = importOtherActivity(sparse('racket', 'squash'))
+    expect(a.movingS).toBe(5401)
+    expect(a.hr).toHaveLength(5401)
+    expect(a.hr[30]).toBe(140) // held from the sample before
+  })
+
+  it('still leaves out a pause the watch’s timer made', () => {
+    const game = sparse('training', 'generic')
+    const paused = sparse('training', 'generic', {
+      // the watch records nothing while paused
+      records: game.records!.filter((r) => { const t = (r.timestamp as Date).getTime() - T0; return t <= 1_800_000 || t >= 2_400_000 }),
+      events: [
+        { event: 'timer', event_type: 'start', timestamp: at(0) },
+        { event: 'timer', event_type: 'stop_all', timestamp: at(1800) },
+        { event: 'timer', event_type: 'start', timestamp: at(2400) },
+      ],
+    })
+    // 0-30 min and 40-90 min: the 10-minute pause is left out, the minute-long gaps around it are play
+    expect(importOtherActivity(paused).movingS).toBe(1801 + 3001)
+  })
+
+  it('takes the watch’s timer total when the samples stop short of it', () => {
+    const a = importOtherActivity(sparse('training', undefined, { sessions: [{ sport: 'training', total_timer_time: 5520.6 }] }))
+    expect(a.movingS).toBe(5521)
+  })
+
+  it('still trims runs and swims by their gaps', () => {
+    expect(importOtherActivity(sparse('running', 'generic')).movingS).toBe(91)
+  })
 })
 
 describe('splitMultisport', () => {
