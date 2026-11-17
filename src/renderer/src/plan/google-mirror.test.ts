@@ -41,19 +41,21 @@ describe('the snapshot sent to Google', () => {
     expect(snap.events[1]!.description).toBe(`Run · 1 h 30 min · 15 km · Easy\n\nFlat route.\n\n${MIRROR_FOOTER}`)
   })
 
-  it('gives a session from a .txt file its steps, without the header lines', async () => {
+  it('gives a session from a .txt file the whole file, header lines and steps', async () => {
     const example = SESSION_EXAMPLES.find((x) => x.fileName.includes('Threshold 4x8'))!
     const { workout: w } = sessionFromFile(example.fileName, example.text, {}, NOW)
     await saveSessionWorkout(w!)
     const planned = await planSessionWorkout(addDays(TODAY, 1), w!)
-    const steps = example.text.split('\n\n').slice(1).join('\n\n').trim()
     const description = (await mirrorSnapshot(NOW, 'metric')).events[0]!.description
-    expect(description.split('\n\n').slice(1, -1).join('\n\n')).toBe(steps)
-    expect(description).not.toMatch(/^(sport|name):/m)
+    expect(description.split('\n\n').slice(1, -1).join('\n\n')).toBe(example.text.trim())
+    expect(description).toMatch(/^sport: run$/m)
 
-    // planned before its steps were kept with it: they come from the library workout
-    await db().schedule.update(planned.id, { session: { sessionWorkoutId: w!.id } })
-    expect((await mirrorSnapshot(NOW, 'metric')).events[0]!.description).toContain('Main set 4x\n- 8m 4:10-4:20/km Pace')
+    // with its library copy gone, the steps planned with it are what's left
+    await db().sessionWorkouts.delete(w!.id)
+    const left = (await mirrorSnapshot(NOW, 'metric')).events[0]!.description
+    expect(left).toContain('Main set 4x\n- 8m 4:10-4:20/km Pace')
+    expect(left).not.toMatch(/^sport:/m)
+    expect(planned.session?.text).toBeTruthy()
   })
 })
 

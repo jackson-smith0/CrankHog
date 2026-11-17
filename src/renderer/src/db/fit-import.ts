@@ -101,13 +101,21 @@ async function importLeg(fileName: string, decoded: DecodedFit, into: { starts: 
   report.imported.push({ name, rideId })
 }
 
-/** A run, swim or strength session: a summary with its hrTSS, for the calendar. */
+/**
+ * A run, swim or strength session: a summary with its hrTSS, for the
+ * calendar. One already imported from a FIT file is read again and replaced,
+ * keeping its id, so importing a file again picks up a better reading (a
+ * squash game once cut to its samples). One synced from intervals.icu or
+ * logged by hand is left alone.
+ */
 async function saveOtherActivity(fileName: string, decoded: DecodedFit, starts: number[]): Promise<{ name: string; id: string }> {
   const a = importOtherActivity(decoded)
-  if (starts.some((s) => Math.abs(s - a.startedAt) < SAME_RIDE_MS)) throw new FitImportError('no-records', 'Already on your calendar.')
+  const near = await db().activities.where('startedAt').between(a.startedAt - SAME_RIDE_MS, a.startedAt + SAME_RIDE_MS).toArray()
+  const fromFile = near.find((x) => x.source === 'fit')
+  if (!fromFile && starts.some((s) => Math.abs(s - a.startedAt) < SAME_RIDE_MS)) throw new FitImportError('no-records', 'Already on your calendar.')
   const athlete = await athleteSnapshot(a.startedAt)
-  const id = `act-${a.startedAt.toString(36)}`
-  const name = activityName(a.sport, a.startedAt, a.subSport)
+  const id = fromFile?.id ?? `act-${a.startedAt.toString(36)}`
+  const name = fromFile?.name ?? activityName(a.sport, a.startedAt, a.subSport)
   await db().activities.put({
     id,
     startedAt: a.startedAt,
@@ -126,7 +134,7 @@ async function saveOtherActivity(fileName: string, decoded: DecodedFit, starts: 
     source: 'fit',
     group: groupOfFitSport(a.sport, a.subSport),
   })
-  starts.push(a.startedAt)
+  if (!fromFile) starts.push(a.startedAt)
   return { name, id }
 }
 

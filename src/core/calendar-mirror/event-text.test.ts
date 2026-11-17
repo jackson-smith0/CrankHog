@@ -37,16 +37,22 @@ describe('mirrorEvent', () => {
     expect(swim('imperial')).toBe('Swim · 1,969 yd')
   })
 
-  it('puts a session’s steps between the summary and the notes, line for line', () => {
-    const steps = 'Warmup\n- 15m Z2 HR\n\nMain set 4x\n- 8m 4:10-4:20/km Pace\n- 2m Z1 HR'
-    const e = mirrorEvent({ id: 's6', date: '2026-11-22', name: 'Threshold 4x8', sport: 'run', durationS: 4200, steps: `\n${steps}\n`, notes: 'Flat route.' }, 'metric')
-    expect(e.description).toBe(`Run · 1 h 10 min\n\n${steps}\n\nFlat route.\n\n${MIRROR_FOOTER}`)
+  it('puts a session’s whole .txt file after the summary, header lines included, line for line', () => {
+    const file = 'sport: run\nname: Threshold 4x8\n\nWarmup\n- 15m Z2 HR\n\nMain set 4x\n- 8m 4:10-4:20/km Pace\n- 2m Z1 HR'
+    const e = mirrorEvent({ id: 's6', date: '2026-11-22', name: 'Threshold 4x8', sport: 'run', durationS: 4200, workoutText: `\n${file}\n`, notes: 'Flat route.' }, 'metric')
+    expect(e.description).toBe(`Run · 1 h 10 min\n\n${file}\n\nFlat route.\n\n${MIRROR_FOOTER}`)
   })
 
-  it('cuts very long steps at a line break, and stays inside the description limit', () => {
+  it('doesn’t repeat notes the file’s own notes: line already carries', () => {
+    const file = 'sport: swim\nnotes: Flat route.\n\n- 400mtr easy'
+    const e = mirrorEvent({ id: 's8', date: '2026-11-22', name: 'Swim', sport: 'swim', workoutText: file, notes: 'Flat route.' }, 'metric')
+    expect(e.description).toBe(`Swim\n\n${file}\n\n${MIRROR_FOOTER}`)
+  })
+
+  it('cuts a very long file at a line break, and stays inside the description limit', () => {
     const line = '- 1m Z2 HR'
-    const steps = Array.from({ length: 1000 }, () => line).join('\n')
-    const e = mirrorEvent({ id: 's7', date: '2026-11-22', name: 'Long', sport: 'run', steps, notes: 'n'.repeat(5000) }, 'metric')
+    const workoutText = Array.from({ length: 1000 }, () => line).join('\n')
+    const e = mirrorEvent({ id: 's7', date: '2026-11-22', name: 'Long', sport: 'run', workoutText, notes: 'n'.repeat(5000) }, 'metric')
     expect(e.description.length).toBeLessThanOrEqual(8000)
     const kept = e.description.split('\n\n')[1]!.split('\n')
     expect(kept.at(-1)).toBe('…')

@@ -8,13 +8,13 @@ import { mirrorEvent, type MirrorSource } from '@core/calendar-mirror/event-text
 import { mirrorWindowStart, type MirrorEvent } from '@core/calendar-mirror/mirror'
 import type { GoogleStatus } from '@shared/ipc/contract'
 import type { UnitSystem } from '@core/units'
-import { dateKey, entrySport, isBikeWorkout, type DateKey, type ScheduledWorkout } from '@core/workout/schedule'
+import { dateKey, entrySport, isBikeWorkout, type DateKey, type PlannedSession, type ScheduledWorkout } from '@core/workout/schedule'
 import { currentFtp, DEFAULT_FTP_W } from '../db/athlete-repo'
 import { db } from '../db/db'
 import { bridge } from '../platform/bridge'
 import { settingsStore } from '../stores/settings'
 import { describeWorkout, getWorkout, plannedStatsOf } from '../workouts/library'
-import { sessionSteps } from '../workouts/sessions-repo'
+import { getSessionWorkout } from '../workouts/sessions-repo'
 
 export interface MirrorSnapshot {
   windowStart: DateKey
@@ -47,7 +47,6 @@ async function sourceOf(e: ScheduledWorkout, ftpW: number): Promise<MirrorSource
   }
   const s = e.session
   if (!s) return base
-  const steps = await sessionSteps(e.name, s)
   return {
     ...base,
     ...(s.label ? { label: s.label } : {}),
@@ -56,8 +55,20 @@ async function sourceOf(e: ScheduledWorkout, ftpW: number): Promise<MirrorSource
     load: s.load ?? null,
     ...(s.effort ? { effort: s.effort } : {}),
     ...(s.notes ? { notes: s.notes } : {}),
-    ...(steps ? { steps } : {}),
+    ...((await fileOf(s)) ?? {}),
   }
+}
+
+/**
+ * A session's whole .txt file: its library copy, which keeps the file as
+ * imported, header lines included (and keeps the event in step with edits
+ * there); else the steps planned with it (an intervals.icu import, or a
+ * library copy since deleted).
+ */
+async function fileOf(s: PlannedSession): Promise<{ workoutText: string } | null> {
+  const w = s.sessionWorkoutId ? await getSessionWorkout(s.sessionWorkoutId) : undefined
+  const text = w?.text.trim() ? w.text : s.text
+  return text?.trim() ? { workoutText: text } : null
 }
 
 /**

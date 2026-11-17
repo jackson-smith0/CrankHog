@@ -13,6 +13,8 @@ const DECODED: Record<string, DecodedFit> = {
     records: Array.from({ length: 3600 }, (_, s) => ({ timestamp: at(s), heart_rate: 160, distance: s * 3 })),
   },
   'strength.fit': { sessions: [{ sport: 'training', sub_sport: 'strength_training' }], records: Array.from({ length: 1800 }, (_, s) => ({ timestamp: at(7200 + s) })) },
+  // 90 minutes of squash two days later, recorded "smart": a sample a minute
+  'squash.fit': { sessions: [{ sport: 'racket', sub_sport: 'squash' }], records: Array.from({ length: 91 }, (_, m) => ({ timestamp: at(172_800 + m * 60), heart_rate: 150 })) },
   // a day later: a triathlon, 20 min swim, a transition, 40 min bike, a transition, 20 min run
   'tri.fit': {
     sessions: [
@@ -52,12 +54,21 @@ describe('importFitFiles: other sports', () => {
     expect(await db().rides.count()).toBe(0)
   })
 
-  it('skips an activity it already has', async () => {
-    await importFitFiles([file('run.fit')])
-    const again = await importFitFiles([file('run.fit')])
-    expect(again.activities).toEqual([])
-    expect(again.skipped[0]!.reason).toMatch(/Already/)
-    expect(await db().activities.count()).toBe(1)
+  it('reads an activity it imported from a file again, replacing it under the same id', async () => {
+    await importFitFiles([file('squash.fit')])
+    const [before] = await db().activities.toArray()
+    // as an earlier CrankHog kept it: cut to its samples
+    await db().activities.update(before!.id, { movingS: 780 })
+    const again = await importFitFiles([file('squash.fit')])
+    expect(again.skipped).toEqual([])
+    expect(await db().activities.toArray()).toEqual([expect.objectContaining({ id: before!.id, sport: 'racket', movingS: 5401 })])
+  })
+
+  it('leaves an activity synced from intervals.icu or logged by hand alone', async () => {
+    await db().activities.put({ id: 'icu-1', startedAt: at(0).getTime() - 1000, sport: 'Run', subSport: null, name: 'Run', movingS: 3500, distanceM: null, avgHr: null, maxHr: null, hrLoad: null, trainingEffect: null, garminLoad: null, device: null, source: 'intervals', group: 'run', externalId: 'i1' })
+    const r = await importFitFiles([file('run.fit')])
+    expect(r.skipped[0]!.reason).toMatch(/Already/)
+    expect(await db().activities.toArray()).toEqual([expect.objectContaining({ id: 'icu-1', movingS: 3500 })])
   })
 })
 
