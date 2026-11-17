@@ -1,7 +1,7 @@
 // What a planned entry says in Google Calendar: its name as the title, and
 // a description with the sport, length and load, then a run, swim or other
-// session's steps as written in its .txt file (header lines left out), then
-// the workout's own notes. Plain text, sentence case, no emoji.
+// session's whole .txt file as imported (header lines and steps), or else the
+// workout's own notes. Plain text, sentence case, no emoji.
 import { SPORT_GROUP_LABEL, type SportGroup } from '../sport/group'
 import { EFFORT_LABEL, type Effort } from '../sport/load'
 import { formatSportDistance } from '../sport/format'
@@ -23,8 +23,8 @@ export interface MirrorSource {
   /** A session's planned load, when it has no TSS from steps. */
   load?: number | null
   effort?: Effort
-  /** A session's steps in intervals.icu text, as in its .txt file without the header lines. */
-  steps?: string
+  /** A session's .txt file as imported, header lines and steps; its notes: line carries the notes. */
+  workoutText?: string
   /** The workout's description, or a session's notes. */
   notes?: string
 }
@@ -34,7 +34,7 @@ export const MIRROR_FOOTER = 'Planned in CrankHog. Move or change it there: this
 const TITLE_MAX = 300
 // Together with the summary and the footer, these keep the description under
 // the 8000 characters the IPC contract allows.
-const STEPS_MAX = 6000
+const TEXT_MAX = 6000
 const NOTES_MAX = 1500
 
 /** Trimmed text no longer than `max`: cut at the last line break that fits (else at `max`), with "…" to show it goes on. */
@@ -62,7 +62,10 @@ export function mirrorEvent(src: MirrorSource, units: UnitSystem): MirrorEvent {
   if (src.effort) facts.push(EFFORT_LABEL[src.effort])
   if (src.tss != null && src.tss > 0) facts.push(`TSS ${Math.round(src.tss)}`)
   else if (src.load != null && src.load > 0) facts.push(`Load ${Math.round(src.load)}`)
-  const description = [facts.join(' · '), clip(src.steps, STEPS_MAX), clip(src.notes, NOTES_MAX), MIRROR_FOOTER].filter(Boolean).join('\n\n')
+  const file = clip(src.workoutText, TEXT_MAX)
+  // the file's own notes: line already says them
+  const notes = file && src.notes && file.includes(src.notes.trim()) ? undefined : clip(src.notes, NOTES_MAX)
+  const description = [facts.join(' · '), file, notes, MIRROR_FOOTER].filter(Boolean).join('\n\n')
   const title = (src.name.trim() || SPORT_GROUP_LABEL[src.sport]).slice(0, TITLE_MAX)
   return { key: src.id, date: src.date, title, description }
 }
