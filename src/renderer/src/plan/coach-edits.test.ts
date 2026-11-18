@@ -8,6 +8,7 @@ import { updateProfile } from '../db/athlete-repo'
 import { db } from '../db/db'
 import { saveSessionWorkout } from '../workouts/sessions-repo'
 import { applyCoachEdit, resolveNow, undoCoachEdit } from './coach-edits'
+import { mirrorSnapshot } from './google-mirror'
 import { sendToIntervals } from './intervals-push'
 import { addSessionToPlan, addToPlan, createPlan, getPlan, putOnCalendar } from './plans-repo'
 import { planSessionWorkout } from '../workouts/sessions-repo'
@@ -55,11 +56,13 @@ describe('applying a coach change', () => {
     const undo = await apply(`action: change\nref: ${entryRef(e.id)}\nsport: run\nname: Easy run 40\n\n- 40m Z2 HR`)
     const after = (await db().schedule.get(e.id))!
     expect(after).toMatchObject({ date: day, sport: 'run', name: 'Easy run 40', session: { durationS: 2400, text: '- 40m Z2 HR' } })
-    expect(after.session?.sessionWorkoutId).toBeUndefined()
-    // the library workout is as it was
+    // that day has a copy of its own; the library workout is as it was
+    const copy = (await db().sessionWorkouts.get(after.session!.sessionWorkoutId!))!
+    expect(copy).toMatchObject({ name: 'Easy run 40', tags: ['coach'] })
     expect((await db().sessionWorkouts.get(w.id))!.text).toBe(RUN_WALK)
     await undoCoachEdit(undo)
     expect(await db().schedule.get(e.id)).toEqual(e)
+    expect(await db().sessionWorkouts.get(copy.id)).toBeUndefined()
   })
 
   it('changes one plan run without touching another day that uses the same workout', async () => {
@@ -177,5 +180,50 @@ describe('applying a coach change', () => {
     const r = await resolveNow(p.edit)
     await db().schedule.delete(e.id)
     await expect(applyCoachEdit(r)).rejects.toThrow(/isn't on the calendar/)
+  })
+
+  describe('the Google Calendar mirror', () => {
+    const event = async (id: string) => (await mirrorSnapshot(Date.now(), 'metric')).events.find((e) => e.key === id)
+
+    it('shows a changed manual run with its new name and whole file, and the old one again after Undo', async () => {
+      const e = await planSessionWorkout(addDays(today, 2), await runWalk())
+      expect((await event(e.id))!.description).toContain('1m Z1 HR walk')
+      const undo = await apply(`action: change\nref: ${entryRef(e.id)}\nsport: run\nname: Easy run 40\nnotes: Conversational the whole way.\n\n- 40m Z2 HR`)
+      const ev = (await event(e.id))!
+      expect(ev.title).toContain('Easy run 40')
+      expect(ev.description).toContain('sport: run\nname: Easy run 40\nnotes: Conversational the whole way.\n\n- 40m Z2 HR')
+      expect(ev.description).not.toContain('walk')
+      await undoCoachEdit(undo)
+      expect((await event(e.id))!.description).toContain('1m Z1 HR walk')
+    })
+
+    it('shows a changed plan run, and leaves the plan\'s other day as it was', async () => {
+      const w = await runWalk()
+      const plan = await createPlan({ name: 'Base', rideDays: [0, 2], startDate: nextMonday })
+      await addSessionToPlan(plan.id, w)
+      await addSessionToPlan(plan.id, w)
+      await putOnCalendar(plan.id)
+      const [first, second] = (await db().schedule.toArray()).sort((a, b) => a.date.localeCompare(b.date))
+      await apply(`action: change\nref: ${entryRef(second!.id)}\nsport: run\nname: Easy run 40\n\n- 40m Z2 HR`)
+      expect((await event(second!.id))!.description).toContain('- 40m Z2 HR')
+      expect((await event(first!.id))!.description).toContain('1m Z1 HR walk')
+    })
+
+    it('shows a changed ride with its new time, a moved session on its new day, and drops a removed one', async () => {
+      const ride = await scheduleWorkout(addDays(today, 1), { id: 'builtin:sweet-spot-3x12', name: 'Sweet Spot 3×12' })
+      await apply(`action: change\nref: ${entryRef(ride.id)}\nsport: ride\nname: Short spin\nnotes: Legs only.\n\n- 30m 55%`)
+      const ev = (await event(ride.id))!
+      expect(ev.title).toContain('Short spin')
+      expect(ev.description).toContain('30 min')
+      expect(ev.description).toContain('- 30m 55%')
+      expect(ev.description).not.toContain('12m')
+      expect(ev.description).toContain('Legs only.')
+
+      const run = await scheduleSession(addDays(today, 1), 'run', 'Run', { durationS: 1800 })
+      await apply(`action: move\nref: ${entryRef(run.id)}\ndate: ${addDays(today, 5)}`)
+      expect((await event(run.id))!.date).toBe(addDays(today, 5))
+      await apply(`action: remove\nref: ${entryRef(run.id)}`)
+      expect(await event(run.id)).toBeUndefined()
+    })
   })
 })

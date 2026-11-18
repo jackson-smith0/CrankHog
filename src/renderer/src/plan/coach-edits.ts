@@ -1,12 +1,13 @@
 // Applying a change the coach proposed in the chat (src/core/ai/calendar-edits.ts),
 // once the rider presses Apply, and undoing it.
 //
-// A change applies to that day only. A manual entry takes the new session
-// as its own snapshot (a ride, as a new library workout). A plan's entry is
-// rebuilt from the library whenever the plan is re-laid, so its new session
-// goes into a new library workout tagged "coach", and only that plan item is
-// pointed at it: other days with the old workout keep it. Moves and removals
-// go the way a drag or the planned workout dialog does.
+// A change applies to that day only: the new session goes into a new
+// library workout tagged "coach", and only that day's entry (or, for a
+// plan's entry, which the plan's re-lay rebuilds from the library, only its
+// plan item) is pointed at it. Other days with the old workout keep it, and
+// the Google Calendar mirror shows the new session's whole file, as for an
+// imported one. Moves and removals go the way a drag or the planned workout
+// dialog does. The mirror follows every change on its own (google-mirror.ts).
 //
 // What apply returns is the undo, as plain data so the chat can keep it.
 import { resolveEdit, withSessionHeader, type CalendarEdit, type EditContent, type EditResolve } from '@core/ai/calendar-edits'
@@ -82,10 +83,10 @@ function sessionWorkoutOf(content: Extract<EditContent, { kind: 'session' }>, na
   }
 }
 
-/** What a session snapshot on a manual entry carries, without a library copy. */
-function snapshotOf(w: SessionWorkout, thresholds: SessionThresholds): PlannedSession {
-  const { sessionWorkoutId: _id, ...session } = plannedFrom(w, thresholds)
-  return session
+/** A session saved as a library workout of its own, and what the entry carries from it. */
+async function savedSession(content: Extract<EditContent, { kind: 'session' }>, name: string, thresholds: SessionThresholds): Promise<{ id: string; session: PlannedSession }> {
+  const w = await saveSessionWorkout(sessionWorkoutOf(content, name))
+  return { id: w.id, session: plannedFrom(w, thresholds) }
 }
 
 async function saveBikeCopy(w: Workout, name: string, notes?: string): Promise<Workout> {
@@ -169,11 +170,13 @@ export async function applyCoachEdit(resolved: EditResolve): Promise<CoachUndo> 
   } else if (c.kind === 'plain-ride') {
     next = { ...bare(entry), sport: 'ride', name, session: { durationS: c.durationS, load: effortLoad(c.durationS, c.effort ?? 'moderate'), ...(c.effort ? { effort: c.effort } : {}), ...(edit.notes ? { notes: edit.notes } : {}) } }
   } else {
-    next = { ...bare(entry), sport: c.sport, name, session: snapshotOf(sessionWorkoutOf(c, name), thresholds) }
+    const saved = await savedSession(c, name, thresholds)
+    created.sessionWorkoutId = saved.id
+    next = { ...bare(entry), sport: c.sport, name, session: saved.session }
   }
   await db().schedule.put(next)
   await followContent(entry.id)
-  return { kind: 'entry', entryId: entry.id, before: entry, after: (await db().schedule.get(entry.id)) ?? next, ...(created.workoutId ? { created } : {}) }
+  return { kind: 'entry', entryId: entry.id, before: entry, after: (await db().schedule.get(entry.id)) ?? next, ...(created.workoutId || created.sessionWorkoutId ? { created } : {}) }
 }
 
 /** The new library workout a plan's entry is pointed at. */
@@ -213,11 +216,13 @@ async function add(r: EditResolve & { ok: true }): Promise<CoachUndo> {
   } else if (c?.kind === 'plain-ride') {
     entry = await scheduleSession(date, 'ride', name, { durationS: c.durationS, load: effortLoad(c.durationS, c.effort ?? 'moderate'), ...(c.effort ? { effort: c.effort } : {}), ...(edit.notes ? { notes: edit.notes } : {}) })
   } else if (c?.kind === 'session') {
-    entry = await scheduleSession(date, c.sport, name, snapshotOf(sessionWorkoutOf(c, name), await sessionThresholds()))
+    const saved = await savedSession(c, name, await sessionThresholds())
+    created.sessionWorkoutId = saved.id
+    entry = await scheduleSession(date, c.sport, name, saved.session)
   } else {
     throw new Error('A new session needs steps, or a duration or distance.')
   }
-  return { kind: 'entry', entryId: entry.id, before: null, after: entry, ...(created.workoutId ? { created } : {}) }
+  return { kind: 'entry', entryId: entry.id, before: null, after: entry, ...(created.workoutId || created.sessionWorkoutId ? { created } : {}) }
 }
 
 /** Library workouts a change made, taken away when nothing uses them any more. */
@@ -302,6 +307,6 @@ export async function previewCoachEdit(r: EditResolve & { ok: true }): Promise<{
   if (!c) return { before, after: before && { ...before, name } }
   if (c.kind === 'bike') return { before, after: await bikeSide(c.workout, date, name) }
   if (c.kind === 'plain-ride') return { before, after: { date, name, sport: 'ride', durationS: c.durationS, distanceM: null, load: effortLoad(c.durationS, c.effort ?? 'moderate') } }
-  const s = snapshotOf(sessionWorkoutOf(c, name), await sessionThresholds())
+  const s = plannedFrom(sessionWorkoutOf(c, name), await sessionThresholds())
   return { before, after: { date, name, sport: c.sport, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, load: s.load ?? null } }
 }
