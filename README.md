@@ -145,7 +145,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
   - Fat Guy, Shrek, Slender Man, The Thing Under the Trainer (it screams), Mr. Bananas the chimp, Angry Goose, LinkedIn Guy, The Infomercial Host, The Nature Narrator and Gen Z Intern;
   - parodies of famous voices: **Bibi**, **The Donald**, **Hillary**, **Barack**, **Charlie Kirk**, **Elizabeth Holmes**, **Iron Mike**, **Eric Andre** and **DJ Khaled**.
   - The iPhone app leaves out the parodies of real people, Shrek and Slender Man.
-- **Your own coach.** Give them a name, a photo, a description of who they are and, if you like, lines of your own for the moments you pick. With an AI provider on, the AI writes their ride lines from the description and plays them in the coach chat. The same one rule applies.
+- **Your own coach.** Give them a name, a photo, a description of who they are and, if you like, lines of your own for the moments you pick. With an AI provider on, the AI writes their ride lines from the description and plays them in the coach chat. A master prompt of up to 8,000 characters tells them what to always keep in mind in chats, debriefs and the fitness overview: your race, your injuries, your week, how you like to be coached. **Notes for every coach** in Settings does the same whoever you pick. The same one rule applies.
 - **The ride-along.** Your coach bikes next to you on a little road on the ride screen, pacing at your target. Ease off and they ride away; push and you drop them. Their lines pop up in a speech bubble. Fold it to a strip, or turn it off.
 - **Caricatures for Bibi and The Donald.** A photo bobblehead on a little bike rides along and talks.
   - Bibi switches between three public photos, The Donald between four. The Donald's long red tie streams in the wind.
@@ -156,6 +156,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **Mute** from the ride screen, or press `C`. Safety prompts still come through.
 - **Voice.** Lines are spoken with a macOS voice, and the music is lowered while the coach talks.
 - **Coach chat.** With an AI provider on, ask your coach about your training and they answer in character, at your spice and profanity levels.
+- **The coach changes your calendar.** Tell them you'd rather run the whole 40 minutes on Thursday, or that you're wrecked, and they write the change into their reply: a session rewritten, moved, added or dropped, shown as a card with its time and load before and after. Nothing changes until you press Apply, and Undo puts it back. A change to a plan's session applies to that day only.
 - **One rule.** No coach ever tells you to hurt yourself. Everything else is fair game, so pick the spice and the language with care. If your heart rate looks wrong, or you stop suddenly in a hard effort, every coach turns supportive.
 
 **Your history**

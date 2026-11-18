@@ -17,18 +17,19 @@ import { settingsStore } from '../stores/settings'
 import { describeWorkout, getWorkout, loadLibrary, plannedStatsOf } from '../workouts/library'
 import { listSessionWorkouts, plannedFrom, sessionSteps, sessionThresholds } from '../workouts/sessions-repo'
 
-/** The [Coach settings] block for the rider's coach as set right now (persona, spice, language). */
+/** The [Coach settings] block for the rider's coach as set right now (persona, spice, language), with the coach's master prompt and the rider's notes for any coach. */
 export function coachVoiceNow(): string {
   const c = settingsStore.getState().coach
-  return coachVoice(coachPack(c.personaId), { spice: c.spice, profanity: c.profanity })
+  return coachVoice(coachPack(c.personaId), { spice: c.spice, profanity: c.profanity }, { instructions: customCoach(c.personaId)?.instructions, notes: c.notes })
 }
 
 /** Settings that change what the coach would write, for telling when a cached text is stale. */
 export function coachVoiceKey(): string {
   const c = settingsStore.getState().coach
-  // a custom coach with a new name or description is a different coach (a new photo isn't)
+  // a custom coach with a new name, description or master prompt is a different coach (a new photo isn't)
   const custom = customCoach(c.personaId)
-  return `${c.personaId}${custom ? `@${hash(`${custom.name}\n${custom.persona}`)}` : ''}/${c.spice}/${c.profanity}`
+  const notes = c.notes.trim() ? `#${hash(c.notes.trim())}` : ''
+  return `${c.personaId}${custom ? `@${hash(`${custom.name}\n${custom.persona}\n${custom.instructions}`)}` : ''}/${c.spice}/${c.profanity}${notes}`
 }
 
 /** A short, stable fingerprint (FNV-1a), for cache keys. */
