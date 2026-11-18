@@ -47,6 +47,11 @@ export const INVOKE_CHANNELS = [
   'intervals.activities',
   'intervals.putWorkout',
   'intervals.deleteWorkout',
+  'google.status',
+  'google.setApp',
+  'google.connect',
+  'google.disconnect',
+  'google.calendar.sync',
   'uploads.enqueue',
   'uploads.list',
   'uploads.retry',
@@ -68,4 +73,4 @@ export const INVOKE_CHANNELS = [
 
 export const SEND_CHANNELS = ['live.publish'] as const
 
-export const EVENT_CHANNELS = ['app.log', 'settings.changed', 'ble.chooser', 'ble.chosen', 'power.suspend', 'uploads.changed', 'update.status', 'ai.stream.delta', 'ai.stream.end', 'live.broadcast', 'ride.command'] as const
+export const EVENT_CHANNELS = ['app.log', 'settings.changed', 'ble.chooser', 'ble.chosen', 'power.suspend', 'uploads.changed', 'google.calendar.changed', 'update.status', 'ai.stream.delta', 'ai.stream.end', 'live.broadcast', 'ride.command'] as const

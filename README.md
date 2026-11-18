@@ -117,13 +117,14 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **Your units.** Metric or imperial, with speed (km/h or mph) and weight (kg or lb) set on their own. Tap the unit on the speed tile to flip it mid-ride.
 
 **Building workouts**
-- **Three shelves.** CrankHog's own workouts, your Custom workouts, and your Training plans. Anything you build lands in Custom unless you file it in a plan.
+- **Bike, Run and Swim.** Workouts and the builder each have the three. Bike has three shelves: CrankHog's own workouts, your Custom workouts, and your Training plans. Anything you build lands in Custom unless you file it in a plan. Run and Swim hold your runs and swims, to search, plan on a day or add to a plan.
+- **Training plan tab.** **Plans and calendar** to build plans and put them on the calendar, or **Browse workouts** to search and filter a plan's workouts, numbered in plan order, and ride any of them.
 - **Training plans.** **Add a training plan** asks what you're training for and when, then:
   - **Import your workout files.** They go in in file-name order, and a file named `YYYY-MM-DD_name` goes on that day.
   - **Build a plan for me.** A few questions (hours a week, the days you ride, your long-ride day, raise FTP, build endurance, or the event, whether all-round, climbing, time trial or criterium), then a week-by-week plan: base, build, specialty and a taper into your event, with a recovery week every fourth week and a ramp test to start. CrankHog builds it from its own workouts, or your AI plans the weeks and writes any workout the library is missing.
   - **Start empty** and pick workouts from your library.
 
-  A plan is its workouts in order, the days you ride and a start date. Put it on the calendar, and every change re-lays it; workouts you've ridden stay where they were.
+  A plan is its workouts in order, the days you ride and its dates: a start date, or a race date it counts back from, so its last workout is the ride day before the race. Put it on the calendar, and every change re-lays it; workouts you've ridden stay where they were.
 - **A builder like zwofactory.com**, with blocks you can grab:
   - drag a block's edge to change its duration, or its top to change its power;
   - drag a block to reorder it;
@@ -136,6 +137,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
   - `.zwo`, `.mrc`, `.erg` and intervals.icu text;
   - **Export to Zwift** drops the file straight into Zwift's Custom Workouts.
 - **Optional AI.** "45 minutes of over-unders, finish with sprints" becomes a workout you can edit.
+- **Runs and swims too.** The builder's Run and Swim tabs build sessions step by step: sections and repeats, lengths in time or distance, and targets in heart rate, pace, or a percent of threshold pace or CSS, with the time and load worked out as you go. Or type them in the session format in Text mode.
 
 **Coaching**
 - **Twenty-seven coaches**, each with a face (a cartoon, or a talking photo head):
@@ -159,10 +161,11 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 **Your history**
 - **History.** Every ride newest first.
 - **The Calendar** (its own page in the sidebar). The whole month: today highlighted, past days greyed, done workouts green and missed ones red.
-  - **Moving and planning:** drag a planned workout to another day, plan any workout on a day with **Add to calendar**, or bring in what's planned on your intervals.icu calendar.
-  - **Events and days off:** click a day's number to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
-  - **Other sports:** runs, swims, squash and strength sessions show up too: from your Garmin's FIT files, from intervals.icu, or logged by hand. Each has a load on the same scale as ride TSS (hrTSS from heart rate, intervals.icu's load, or how hard you say it was).
-  - **Planning any sport:** click a day's number to plan a run, a swim or a squash game, or import planned sessions as text files named `YYYY-MM-DD_Name.txt`. The format is in [docs/WORKOUT-FORMAT.md](docs/WORKOUT-FORMAT.md) and the in-app **Format guide**. A planned session turns green when an activity of its sport lands on its day.
+  - **Moving and planning:** click a day to pick a bike workout, run or swim for it from the same tabs and filters as the Workouts page, drag a planned workout to another day, or bring in what's planned on your intervals.icu calendar.
+  - **Google Calendar:** sign in with Google and your planned training shows up as all-day events in a calendar named CrankHog. Move or remove a workout here and Google follows within seconds.
+  - **Events and days off:** click a day to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
+  - **Other sports:** runs, swims, squash and strength sessions show up too: from your Garmin's FIT files, from intervals.icu, or logged by hand. Squash, the gym and other sports that aren't a run or a swim keep their full time from a FIT file: only the watch's own pauses count as stopped. Importing a file again re-reads it. Each has a load on the same scale as ride TSS (hrTSS from heart rate, intervals.icu's load, or how hard you say it was).
+  - **Planning any sport:** click a day to plan a run, a swim or a squash game, or import planned sessions as text files named `YYYY-MM-DD_Name.txt`. The format is in [docs/WORKOUT-FORMAT.md](docs/WORKOUT-FORMAT.md) and the in-app **Format guide**. A planned session turns green when an activity of its sport lands on its day.
   - **Beside each week:** planned against done time, load and sessions, split into Ride, Run, Swim and Other, with fitness, fatigue and form at the week's end, projected from your plan for the weeks ahead. Fitness counts every sport; the power curve and FTP stay rides only.
 - **Ride detail:** power, cadence, HR, speed and W′ balance charts, laps, time in zones, RPE and notes, and an AI debrief.
 - **Fitness:** the PMC (fitness, fatigue, form), weekly load, the power curve against your 90-day best, and FTP history.
@@ -272,6 +275,15 @@ CrankHog only uploads. It never reads your Strava data. Without a subscription, 
 - **Kept out of the AI.** Activities from intervals.icu are never sent to the AI.
 - **Planned sessions to your watch.** Open a planned run or swim on the Calendar and press **Send to intervals.icu**. intervals.icu reads the steps and puts the workout on your Garmin, if your Garmin connection there allows planned workouts. Moving or removing the session in CrankHog changes it there too. **Import from intervals.icu** brings the runs and swims you plan there onto CrankHog's calendar.
 
+**Google Calendar.** Open **Settings → Strava & sync** and press **Sign in with Google**.
+- **What you get.** CrankHog makes a calendar named CrankHog in your Google account and keeps it matching your plan: every planned workout and session from 30 days ago onward, as an all-day event with its length, TSS or load, and notes. Runs, swims and other sessions also carry their whole `.txt` file, header lines and steps, as you imported it. Add, move, rename or remove one in CrankHog and Google follows within seconds, plans and intervals.icu imports included. Changes made while offline go across the next time CrankHog can reach Google.
+- **Only its own calendar.** CrankHog asks for permission to manage calendars it created, nothing else. Your other calendars and events are never read or touched. Events you add to the CrankHog calendar yourself are left alone.
+- **CrankHog is the plan.** Drag an event to another day in Google and it goes back to its day in CrankHog. Move it in CrankHog instead.
+- **Your own Google app.** Official builds carry CrankHog's own Google app, so you just sign in. A build without it (a local build, or a fork) shows a short setup: make a free Google Cloud project, enable the Calendar API, create a *Desktop app* OAuth client, and paste its client ID and secret.
+- **Signing out** revokes CrankHog's access. The CrankHog calendar stays in Google; delete it there if you no longer want it.
+- **One calendar per account.** Each Google account you sign in with keeps its own CrankHog calendar, and switching back reuses it. On a new Mac, restore your backup (**Settings → Data & backup**) before signing in and CrankHog carries on with the same calendar. Without the backup it makes a new one, and you can delete the old one in Google.
+- **A refused change doesn't hold up the rest.** If Google turns one event down, the others still go across, and Settings says which went wrong.
+
 **Garmin Connect.** Drag a ride's FIT file into Garmin Connect's import page. There is no automatic upload.
 
 **AI.** Open **Settings → AI** and pick one provider:
@@ -284,7 +296,7 @@ Keys are encrypted with your macOS Keychain and never reach the app's UI process
 
 ## Your data
 
-Everything stays on this Mac. Rides live in the app's database, plus a FIT file per ride in `~/Documents/CrankHog/Rides`; you can change that folder, for example to one in iCloud Drive for free sync. **Settings → Data & backup** saves or restores a full backup zip, or scans the FIT folder to rebuild your history on a new Mac. Nothing leaves the machine unless you connect Strava or intervals.icu, turn on an AI provider, or send a bug report. The update check asks GitHub for the newest release and sends no data of yours.
+Everything stays on this Mac. Rides live in the app's database, plus a FIT file per ride in `~/Documents/CrankHog/Rides`; you can change that folder, for example to one in iCloud Drive for free sync. **Settings → Data & backup** saves or restores a full backup zip, or scans the FIT folder to rebuild your history on a new Mac. Nothing leaves the machine unless you connect Strava, intervals.icu or Google Calendar, turn on an AI provider, or send a bug report. Google Calendar gets only the name, day and description of each planned session. The update check asks GitHub for the newest release and sends no data of yours.
 
 ## Reporting a bug
 
@@ -310,7 +322,7 @@ Ad-hoc signatures change on every build, so macOS forgets permission grants such
 
 ### Releasing a signed build
 
-`npm run dist` makes an ad-hoc signed DMG, which macOS blocks on first launch. `npm run dist:signed` makes the same DMG signed with a Developer ID, with the hardened runtime, notarized by Apple and stapled, so it opens with only the usual "downloaded from the Internet" prompt. It needs a paid Apple Developer Program membership, and two things set up once per Mac:
+`npm run dist` makes an ad-hoc signed DMG, which macOS blocks on first launch. `npm run dist:signed` makes the same DMG signed with a Developer ID, with the hardened runtime, notarized by Apple and stapled, so it opens with only the usual "downloaded from the Internet" prompt. It needs a paid Apple Developer Program membership, and three things set up once per Mac:
 
 1. **A Developer ID Application certificate** in your login keychain. Create it at [developer.apple.com → Certificates](https://developer.apple.com/account/resources/certificates/add) from a certificate request made in Keychain Access. Without Xcode, also install Apple's [Developer ID G2 intermediate](https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer), or the certificate shows as not valid. `security find-identity -v -p codesigning` should list it.
 2. **Notarization credentials** in a keychain profile named `crankhog` (set `CRANKHOG_NOTARY_PROFILE` to use another name). Make an app-specific password at [account.apple.com](https://account.apple.com), then run:
@@ -318,8 +330,19 @@ Ad-hoc signatures change on every build, so macOS forgets permission grants such
    ```bash
    xcrun notarytool store-credentials crankhog --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
    ```
+3. **CrankHog's Google app** (the client ID and secret riders sign in to Google Calendar with) in the keychain. Each command asks for the value, so it stays out of your shell history:
 
-The script checks both before it builds. Then it signs, notarizes and staples the app and the DMG, builds the zip and `latest-mac.yml` that the in-app updater installs from, and runs `spctl` the way Gatekeeper will. Notarization usually takes a few minutes. CI keeps building the ad-hoc DMG, because the certificate never leaves your Mac. To release:
+   ```bash
+   security add-generic-password -U -s crankhog-google -a client-id -w
+   ```
+
+   ```bash
+   security add-generic-password -U -s crankhog-google -a client-secret -w
+   ```
+
+   `CRANKHOG_GOOGLE_CLIENT_ID` and `CRANKHOG_GOOGLE_CLIENT_SECRET` override them. Without the app, the DMG would send every rider off to make their own Google Cloud project, so the script refuses to build, and it checks the built app really carries it.
+
+The script checks all three before it builds. Then it signs, notarizes and staples the app and the DMG, builds the zip and `latest-mac.yml` that the in-app updater installs from, and runs `spctl` the way Gatekeeper will. Notarization usually takes a few minutes. CI keeps building the ad-hoc DMG, because the certificate never leaves your Mac. To release:
 
 1. Merge the version bump and push the tag (`v0.5.0`). CI creates the GitHub release with its ad-hoc DMG. The bump carries the full notes in `docs/releases/v0.5.0.md` (CI puts them on the release) and a short entry in `src/core/whats-new/notes.ts`, which riders see once after the update; a test fails a bump without one.
 2. Run `npm run dist:signed -- --upload`. It replaces CI's DMG with the signed one and attaches the zip, its blockmap and `latest-mac.yml`. Once `latest-mac.yml` is on the release, installed copies (0.5.0 and later) find the update within six hours, or right away from **Settings → About → Check for updates**.

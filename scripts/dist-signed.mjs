@@ -8,9 +8,13 @@
 // Needs, once per Mac (see README → Releasing a signed build):
 // - a "Developer ID Application" certificate in the login keychain;
 // - notarytool credentials saved as a keychain profile, `crankhog` by default
-//   (override with CRANKHOG_NOTARY_PROFILE).
+//   (override with CRANKHOG_NOTARY_PROFILE);
+// - CrankHog's Google app for Calendar sign-in, in the keychain as service
+//   `crankhog-google` (see scripts/google-app.mjs). The release stops without
+//   it, or riders would each have to make their own Google Cloud project.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { bundleCarries, KEYCHAIN_SERVICE, resolveGoogleApp } from './google-app.mjs'
 
 const profile = process.env.CRANKHOG_NOTARY_PROFILE ?? 'crankhog'
 const { version } = JSON.parse(readFileSync('package.json', 'utf8'))
@@ -42,6 +46,16 @@ try {
   fail(`The notarytool keychain profile "${profile}" is missing or its password no longer works. See README → Releasing a signed build.`)
 }
 
+const google = resolveGoogleApp(process.env, (account) => {
+  try {
+    return read('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', account, '-w'])
+  } catch {
+    return null
+  }
+})
+if (!google.ok) fail(`CrankHog's Google app (Calendar sign-in) isn't set up on this Mac. ${google.error} See README → Releasing a signed build.`)
+const { clientId, clientSecret } = google.app
+
 if (upload) {
   try {
     read('gh', ['release', 'view', tag, '--json', 'tagName'])
@@ -50,9 +64,13 @@ if (upload) {
   }
 }
 
-console.log(`Signing as "Developer ID Application: ${identity}", notarizing with profile "${profile}".\n`)
+console.log(`Signing as "Developer ID Application: ${identity}", notarizing with profile "${profile}".`)
+console.log(`Google app from the ${google.source}: client …${clientId.replace('.apps.googleusercontent.com', '').slice(-6)}.\n`)
 
-run('npm', ['run', 'build'])
+run('npm', ['run', 'build'], { CRANKHOG_GOOGLE_CLIENT_ID: clientId, CRANKHOG_GOOGLE_CLIENT_SECRET: clientSecret })
+if (!bundleCarries(readFileSync('out/main/index.js', 'utf8'), clientId)) {
+  fail('The build doesn\'t carry the Google app. Check the __CRANKHOG_GOOGLE_APP__ define in electron.vite.config.ts.')
+}
 run(
   'npx',
   [

@@ -19,6 +19,8 @@ export interface SportVolume {
   sessions: number
   durationS: number
   distanceM: number
+  /** The time of the sessions with no distance, so a sport counted in distance (a swim) still shows them. */
+  timeOnlyS: number
   load: number
 }
 
@@ -34,7 +36,7 @@ export interface VolumeTotals {
   compliance: number | null
 }
 
-const zero = (): SportVolume => ({ sessions: 0, durationS: 0, distanceM: 0, load: 0 })
+const zero = (): SportVolume => ({ sessions: 0, durationS: 0, distanceM: 0, timeOnlyS: 0, load: 0 })
 
 function emptySide(): VolumeSide {
   return { ...zero(), bySport: Object.fromEntries(SPORT_GROUPS.map((g) => [g, zero()])) as Record<SportGroup, SportVolume> }
@@ -45,6 +47,7 @@ function add(side: VolumeSide, sport: SportGroup, durationS: number | null, dist
     v.sessions++
     v.durationS += durationS ?? 0
     v.distanceM += distanceM ?? 0
+    if (!distanceM) v.timeOnlyS += durationS ?? 0
     v.load += load ?? 0
   }
 }

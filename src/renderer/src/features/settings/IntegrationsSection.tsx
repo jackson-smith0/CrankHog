@@ -6,6 +6,7 @@ import { patchSettings, useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Field, Input, Section, Switch } from '../../ui/form'
 import { RideDescriptionFields } from './RideDescriptionFields'
+import { GoogleCalendarSection } from './GoogleCalendarSection'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { lastActivitySync } from '../../plan/intervals-activities'
 import { stravaHint } from '../calendar/sync-text'
@@ -186,6 +187,8 @@ export function IntegrationsSection() {
           )}
         </Field>
       </Section>
+
+      {!__CRANKHOG_WEB__ && <GoogleCalendarSection />}
     </>
   )
 }

@@ -11,6 +11,7 @@ import { loadCustomCoaches } from './coach/custom'
 import { startUpdateStatus } from './stores/updates'
 import { startWhatsNew } from './features/whats-new/whats-new'
 import { startActivitySync } from './plan/intervals-activities'
+import { startGoogleMirror } from './plan/google-mirror'
 import './brand/fonts'
 import { isNative } from './platform/native'
 import './styles.css'
@@ -36,6 +37,7 @@ createRoot(root).render(
 void startAutoConnect(runtime)
 void startWhatsNew(info)
 startActivitySync()
+startGoogleMirror()
 
 // The installed web app works offline (the desktop app has no need).
 // the iPhone app serves its files from the app bundle: no service worker there

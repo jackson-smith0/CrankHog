@@ -232,6 +232,11 @@ export function createWebShim(): CrankHogBridge {
     'intervals.activities': () => {
       throw new Error('Activities from intervals.icu need the Mac app, which keeps your API key.')
     },
+    'google.status': () => ({ configured: false, builtInApp: false, connected: false, syncing: false }),
+    'google.setApp': () => ({ ok: false }),
+    'google.connect': () => ({ ok: false, error: 'Google Calendar needs the Mac app, which keeps your sign-in safe.' }),
+    'google.disconnect': () => ({ ok: true }),
+    'google.calendar.sync': () => ({ ok: false }),
     'uploads.enqueue': ({ rideId, provider }) => ({ id: `${provider}:${rideId}`, status: 'error' }),
     'uploads.list': () => ({ items: [] }),
     'uploads.retry': () => ({ ok: false }),
