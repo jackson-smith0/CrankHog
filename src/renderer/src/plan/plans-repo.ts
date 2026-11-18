@@ -157,6 +157,27 @@ export async function resetPlanWorkout(id: string, itemId: string): Promise<Trai
   return updateItem(id, itemId, withoutOverrides)
 }
 
+/** One item of a plan, as it is now. */
+export async function planItem(id: string, itemId: string): Promise<PlanItem | undefined> {
+  return (await db().plans.get(id))?.items.find((i) => i.id === itemId)
+}
+
+/**
+ * Points one plan workout at another library workout (a bike workout, or a
+ * session of `sport`), keeping its day and any move: the coach changing that
+ * day's session. False as for movePlanWorkout.
+ */
+export async function replacePlanWorkout(id: string, itemId: string, workout: { id: string; sport?: 'run' | 'swim' | 'other' }): Promise<boolean> {
+  if (!(await onCalendarWith(id, itemId))) return false
+  await updateItem(id, itemId, ({ sport: _s, removed: _r, ...i }) => ({ ...i, workoutId: workout.id, ...(workout.sport ? { sport: workout.sport } : {}) }))
+  return true
+}
+
+/** Puts a plan item back as it was (undoing a coach's change). */
+export async function restorePlanItem(id: string, item: PlanItem): Promise<TrainingPlan> {
+  return updateItem(id, item.id, () => item)
+}
+
 /** Names for the calendar: built-ins and the rider's own workouts. */
 async function workoutNames(ids: readonly string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>()

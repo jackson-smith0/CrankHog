@@ -145,7 +145,7 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
   - Fat Guy, Shrek, Slender Man, The Thing Under the Trainer (it screams), Mr. Bananas the chimp, Angry Goose, LinkedIn Guy, The Infomercial Host, The Nature Narrator and Gen Z Intern;
   - parodies of famous voices: **Bibi**, **The Donald**, **Hillary**, **Barack**, **Charlie Kirk**, **Elizabeth Holmes**, **Iron Mike**, **Eric Andre** and **DJ Khaled**.
   - The iPhone app leaves out the parodies of real people, Shrek and Slender Man.
-- **Your own coach.** Give them a name, a photo, a description of who they are and, if you like, lines of your own for the moments you pick. With an AI provider on, the AI writes their ride lines from the description and plays them in the coach chat. The same one rule applies.
+- **Your own coach.** Give them a name, a photo, a description of who they are and, if you like, lines of your own for the moments you pick. With an AI provider on, the AI writes their ride lines from the description and plays them in the coach chat. A master prompt of up to 8,000 characters tells them what to always keep in mind in chats, debriefs and the fitness overview: your race, your injuries, your week, how you like to be coached. **Notes for every coach** in Settings does the same whoever you pick. The same one rule applies.
 - **The ride-along.** Your coach bikes next to you on a little road on the ride screen, pacing at your target. Ease off and they ride away; push and you drop them. Their lines pop up in a speech bubble. Fold it to a strip, or turn it off.
 - **Caricatures for Bibi and The Donald.** A photo bobblehead on a little bike rides along and talks.
   - Bibi switches between three public photos, The Donald between four. The Donald's long red tie streams in the wind.
@@ -156,13 +156,14 @@ It's a data-obsessed indoor cycling trainer for macOS, and [for your phone](#on-
 - **Mute** from the ride screen, or press `C`. Safety prompts still come through.
 - **Voice.** Lines are spoken with a macOS voice, and the music is lowered while the coach talks.
 - **Coach chat.** With an AI provider on, ask your coach about your training and they answer in character, at your spice and profanity levels.
+- **The coach changes your calendar.** Tell them you'd rather run the whole 40 minutes on Thursday, or that you're wrecked, and they write the change into their reply: a session rewritten, moved, added or dropped, shown as a card with its time and load before and after. Nothing changes until you press Apply, and Undo puts it back. A change to a plan's session applies to that day only.
 - **One rule.** No coach ever tells you to hurt yourself. Everything else is fair game, so pick the spice and the language with care. If your heart rate looks wrong, or you stop suddenly in a hard effort, every coach turns supportive.
 
 **Your history**
 - **History.** Every ride newest first.
 - **The Calendar** (its own page in the sidebar). The whole month: today highlighted, past days greyed, done workouts green and missed ones red.
   - **Moving and planning:** click a day to pick a bike workout, run or swim for it from the same tabs and filters as the Workouts page, drag a planned workout to another day, or bring in what's planned on your intervals.icu calendar.
-  - **Google Calendar:** sign in with Google and your planned training shows up as all-day events in a calendar named CrankHog. Move or remove a workout here and Google follows within seconds.
+  - **Google Calendar:** sign in with Google and your planned training shows up as all-day events in a calendar named CrankHog. Each event's description has the session's length, load and steps. Move, remove or change a workout here, or let the coach change it, and Google follows within seconds.
   - **Events and days off:** click a day to mark an event (A, B or C) or a rest, sick or travel day. Plans skip days off and stop before their event, and Home counts down to your next A event.
   - **Other sports:** runs, swims, squash and strength sessions show up too: from your Garmin's FIT files, from intervals.icu, or logged by hand. Squash, the gym and other sports that aren't a run or a swim keep their full time from a FIT file: only the watch's own pauses count as stopped. Importing a file again re-reads it. Each has a load on the same scale as ride TSS (hrTSS from heart rate, intervals.icu's load, or how hard you say it was).
   - **Planning any sport:** click a day to plan a run, a swim or a squash game, or import planned sessions as text files named `YYYY-MM-DD_Name.txt`. The format is in [docs/WORKOUT-FORMAT.md](docs/WORKOUT-FORMAT.md) and the in-app **Format guide**. A planned session turns green when an activity of its sport lands on its day.

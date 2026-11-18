@@ -1,6 +1,6 @@
 // Renderer-side AI helpers. All calls go through main (keys never live here).
 import { coachVoice } from '@core/coach'
-import { athleteContext, type ContextPlanned, type ContextWorkout } from '@core/ai/athlete-context'
+import { athleteContext, CONTEXT_BUDGET, type ContextPlanned, type ContextWorkout } from '@core/ai/athlete-context'
 import type { AiMessage } from '@core/ai/types'
 import type { FitnessFacts } from '@core/metrics'
 import { dailyLoad } from '@core/sport/daily-load'
@@ -17,18 +17,19 @@ import { settingsStore } from '../stores/settings'
 import { describeWorkout, getWorkout, loadLibrary, plannedStatsOf } from '../workouts/library'
 import { listSessionWorkouts, plannedFrom, sessionSteps, sessionThresholds } from '../workouts/sessions-repo'
 
-/** The [Coach settings] block for the rider's coach as set right now (persona, spice, language). */
+/** The [Coach settings] block for the rider's coach as set right now (persona, spice, language), with the coach's master prompt and the rider's notes for any coach. */
 export function coachVoiceNow(): string {
   const c = settingsStore.getState().coach
-  return coachVoice(coachPack(c.personaId), { spice: c.spice, profanity: c.profanity })
+  return coachVoice(coachPack(c.personaId), { spice: c.spice, profanity: c.profanity }, { instructions: customCoach(c.personaId)?.instructions, notes: c.notes })
 }
 
 /** Settings that change what the coach would write, for telling when a cached text is stale. */
 export function coachVoiceKey(): string {
   const c = settingsStore.getState().coach
-  // a custom coach with a new name or description is a different coach (a new photo isn't)
+  // a custom coach with a new name, description or master prompt is a different coach (a new photo isn't)
   const custom = customCoach(c.personaId)
-  return `${c.personaId}${custom ? `@${hash(`${custom.name}\n${custom.persona}`)}` : ''}/${c.spice}/${c.profanity}`
+  const notes = c.notes.trim() ? `#${hash(c.notes.trim())}` : ''
+  return `${c.personaId}${custom ? `@${hash(`${custom.name}\n${custom.persona}\n${custom.instructions}`)}` : ''}/${c.spice}/${c.profanity}${notes}`
 }
 
 /** A short, stable fingerprint (FNV-1a), for cache keys. */
@@ -78,7 +79,7 @@ const r1 = (v: number | null | undefined) => (v === null || v === undefined ? nu
  * message: see src/core/ai/athlete-context.ts for what it holds. Every
  * stored ride, other sport, plan and calendar entry; never Strava data.
  */
-export async function coachContext(now = Date.now()): Promise<string> {
+export async function coachContext(now = Date.now(), budget = CONTEXT_BUDGET): Promise<string> {
   const settings = settingsStore.getState()
   const [ftps, profile, curve, weeks, rides, activities, plans, schedule, marks, sessions, thresholds] = await Promise.all([
     ftpHistory(),
@@ -126,7 +127,7 @@ export async function coachContext(now = Date.now()): Promise<string> {
     planned,
     marks,
     workouts,
-  })
+  }, budget)
 }
 
 /** A calendar entry's length and load at `ftpW`, and its steps: a bike workout's as intervals.icu text, a session's as planned. */

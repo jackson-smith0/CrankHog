@@ -7,6 +7,7 @@
 // stays out (it is never sent anywhere). Cut to a budget by dropping detail
 // (laps, steps, far days) before anything else.
 import { computePmc, projectPmc, type PmcDay } from '../metrics/pmc'
+import { entryRef } from './calendar-edits'
 import type { RideSummary } from '../ride/types'
 import { activityGroup, type SportGroup } from '../sport/group'
 import { activityLoad, type Effort } from '../sport/load'
@@ -123,7 +124,7 @@ interface Detail {
 }
 
 const DETAIL: readonly Detail[] = [
-  { rides: 20, laps: 10, activities: 30, pastDays: 28, aheadDays: 84, stepsDays: 14, entries: 160, plans: 10, events: 20, workouts: 60 },
+  { rides: 20, laps: 10, activities: 30, pastDays: 28, aheadDays: 84, stepsDays: 21, entries: 160, plans: 10, events: 20, workouts: 60 },
   { rides: 20, laps: 5, activities: 30, pastDays: 28, aheadDays: 56, stepsDays: 7, entries: 110, plans: 10, events: 20, workouts: 40 },
   { rides: 15, laps: 2, activities: 20, pastDays: 14, aheadDays: 42, stepsDays: 3, entries: 70, plans: 8, events: 15, workouts: 20 },
   { rides: 10, laps: 0, activities: 10, pastDays: 7, aheadDays: 21, stepsDays: 1, entries: 40, plans: 5, events: 10, workouts: 0 },
@@ -301,11 +302,13 @@ function calendarFacts(input: AthleteContextInput, prep: Prepared, d: Detail) {
     const what = input.planned.get(e.id)
     const detailed = e.date >= today && e.date < stepsTo && status !== 'done'
     return {
+      ref: entryRef(e.id),
       date: day(e.date),
       name: clip(e.name, 80),
       sport,
       label: e.session?.label && e.session.label !== e.name ? clip(e.session.label, 80) : undefined,
       plan: e.planId ? planNames.get(e.planId) : undefined,
+      from: e.source === 'intervals' ? ('intervals.icu' as const) : undefined,
       status,
       min: what?.durationS ? Math.round(what.durationS / 60) : undefined,
       load: r1(what?.load) ?? undefined,
