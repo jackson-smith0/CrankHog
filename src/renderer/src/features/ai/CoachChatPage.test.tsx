@@ -54,6 +54,8 @@ describe('coach chat calendar changes', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Apply' })))
     await waitFor(async () => expect((await db().schedule.get(e.id))!.name).toBe('Easy run 40'))
     expect(screen.getByText('Applied')).toBeTruthy()
+    // the card still reads as the change it made, not the calendar it left
+    expect(screen.getByTestId('coach-edit').textContent).toContain('Run-walk 40')
     // kept with the chat
     const stored = (await db().kv.get('coach.chat'))!.value as { edits?: Record<number, { status: string }> }[]
     expect(stored[1]!.edits?.[0]?.status).toBe('applied')

@@ -11,7 +11,7 @@ import { handoffMessage, takeHandoff, type ChatHandoff } from '../../ai/handoff'
 import { PersonaAvatar } from '../../coach/PersonaAvatar'
 import { db } from '../../db/db'
 import { useCoachPack } from '../../coach/custom'
-import { applyCoachEdit, resolveNow, undoCoachEdit } from '../../plan/coach-edits'
+import { applyCoachEdit, previewCoachEdit, resolveNow, undoCoachEdit, type EditSide } from '../../plan/coach-edits'
 import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Markdown } from '../../ui/Markdown'
@@ -168,9 +168,9 @@ export function CoachChatPage() {
     await db().kv.put({ key: KV_KEY, value: next })
   }
 
-  const apply = async (at: number, index: number, resolved: EditResolve & { ok: true }) => {
+  const apply = async (at: number, index: number, resolved: EditResolve & { ok: true }, shown: { before: EditSide | null; after: EditSide | null }) => {
     const undo = await applyCoachEdit(resolved)
-    await setEdit(at, index, { status: 'applied', undo })
+    await setEdit(at, index, { status: 'applied', undo, shown })
     setCalendarVersion((v) => v + 1)
   }
 
@@ -242,7 +242,7 @@ export function CoachChatPage() {
                     writing={running !== null && i === messages.length - 1}
                     locked={running !== null}
                     calendarVersion={calendarVersion}
-                    onApply={(index, r) => apply(i, index, r)}
+                    onApply={(index, r, shown) => apply(i, index, r, shown)}
                     onDismiss={(index) => void setEdit(i, index, { status: 'dismissed' })}
                     onUndo={(index) => undo(i, index)}
                   />
@@ -309,7 +309,7 @@ function CoachReply({
   /** A reply is on its way: the cards wait, so what the rider does isn't lost when it lands. */
   locked: boolean
   calendarVersion: number
-  onApply: (index: number, resolved: EditResolve & { ok: true }) => Promise<void>
+  onApply: (index: number, resolved: EditResolve & { ok: true }, shown: { before: EditSide | null; after: EditSide | null }) => Promise<void>
   onDismiss: (index: number) => void
   onUndo: (index: number) => Promise<void>
 }) {
@@ -325,7 +325,7 @@ function CoachReply({
       const r = await resolveNow(p.parse.edit)
       try {
         if (!r.ok) throw new Error(r.problem)
-        await onApply(p.index, r)
+        await onApply(p.index, r, await previewCoachEdit(r))
       } catch (e) {
         skipped.push(`Change ${p.index + 1}: ${e instanceof Error ? e.message : String(e)}`)
       }
@@ -348,7 +348,7 @@ function CoachReply({
             state={message.edits?.[p.index]}
             locked={locked}
             calendarVersion={calendarVersion}
-            onApply={(r) => onApply(p.index, r)}
+            onApply={(r, shown) => onApply(p.index, r, shown)}
             onDismiss={() => onDismiss(p.index)}
             onUndo={() => onUndo(p.index)}
           />

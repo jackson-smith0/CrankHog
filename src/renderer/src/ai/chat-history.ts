@@ -2,7 +2,7 @@
 // contract (60 messages) and the providers accept.
 import { editCount } from '@core/ai/calendar-edits'
 import type { AiMessage } from '@core/ai/types'
-import type { CoachUndo } from '../plan/coach-edits'
+import type { CoachUndo, EditSide } from '../plan/coach-edits'
 import type { ChatHandoff } from './handoff'
 
 /** What the rider did with one of the coach's calendar changes (src/core/ai/calendar-edits.ts). */
@@ -10,6 +10,8 @@ export interface ChatEditState {
   status: 'applied' | 'dismissed' | 'undone'
   /** How to put an applied change back. */
   undo?: CoachUndo
+  /** What the card showed when the change was applied, so it still reads that way after the calendar has moved on. */
+  shown?: { before: EditSide | null; after: EditSide | null }
 }
 
 /** A chat turn as stored. `shared` marks a context handoff, shown as a card rather than the raw prompt. */
