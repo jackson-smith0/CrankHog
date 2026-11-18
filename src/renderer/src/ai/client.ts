@@ -1,6 +1,6 @@
 // Renderer-side AI helpers. All calls go through main (keys never live here).
 import { coachVoice } from '@core/coach'
-import { athleteContext, type ContextPlanned, type ContextWorkout } from '@core/ai/athlete-context'
+import { athleteContext, CONTEXT_BUDGET, type ContextPlanned, type ContextWorkout } from '@core/ai/athlete-context'
 import type { AiMessage } from '@core/ai/types'
 import type { FitnessFacts } from '@core/metrics'
 import { dailyLoad } from '@core/sport/daily-load'
@@ -78,7 +78,7 @@ const r1 = (v: number | null | undefined) => (v === null || v === undefined ? nu
  * message: see src/core/ai/athlete-context.ts for what it holds. Every
  * stored ride, other sport, plan and calendar entry; never Strava data.
  */
-export async function coachContext(now = Date.now()): Promise<string> {
+export async function coachContext(now = Date.now(), budget = CONTEXT_BUDGET): Promise<string> {
   const settings = settingsStore.getState()
   const [ftps, profile, curve, weeks, rides, activities, plans, schedule, marks, sessions, thresholds] = await Promise.all([
     ftpHistory(),
@@ -126,7 +126,7 @@ export async function coachContext(now = Date.now()): Promise<string> {
     planned,
     marks,
     workouts,
-  })
+  }, budget)
 }
 
 /** A calendar entry's length and load at `ftpW`, and its steps: a bike workout's as intervals.icu text, a session's as planned. */

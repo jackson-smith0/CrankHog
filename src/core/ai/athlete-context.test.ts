@@ -3,6 +3,7 @@ import { normalizeRide } from '../ride/normalize'
 import type { RideSummary } from '../ride/types'
 import type { DayMark, TrainingPlan } from '../workout/plan'
 import { dateKeyToMs, type ScheduledWorkout } from '../workout/schedule'
+import { entryRef } from './calendar-edits'
 import { athleteContext, type AthleteContextInput, type AthleteContextJson, type ContextActivity, type ContextPlanned } from './athlete-context'
 
 // Tuesday 17 November 2026, midday local time
@@ -116,9 +117,16 @@ describe('athleteContext', () => {
     expect(cal('Workout c')).toMatchObject({ status: 'today', steps: '- 10m ramp 50-75%\n- 40m 70%', notes: 'Notes for c' })
     expect(cal('Workout d')).toMatchObject({ date: '2026-11-18 Wed', status: 'planned' })
     expect(cal('Long run')).toMatchObject({ sport: 'run', effort: 'easy', status: 'planned' })
-    // more than two weeks ahead: on the calendar, without its steps
+    // more than three weeks ahead: on the calendar, without its steps
     expect(cal('Workout f')).toBeDefined()
     expect(cal('Workout f')?.steps).toBeUndefined()
+  })
+
+  it('names each calendar entry by a ref the coach can write a change against, and says which came from intervals.icu', () => {
+    const c = parse(athleteContext(input({ schedule: [entry('e1', '2026-11-19'), entry('icu', '2026-11-20', { source: 'intervals' })] })))
+    expect(c.calendar.map((e) => e.ref)).toEqual([entryRef('e1'), entryRef('icu')])
+    expect(c.calendar[0]?.from).toBeUndefined()
+    expect(c.calendar[1]?.from).toBe('intervals.icu')
   })
 
   it('says where each plan is and the race it builds to', () => {

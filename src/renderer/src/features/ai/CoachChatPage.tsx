@@ -1,18 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ChevronDown, Send, Square, Trash2 } from 'lucide-react'
+import { CONTEXT_BUDGET } from '@core/ai/athlete-context'
+import { splitCoachReply, type EditResolve } from '@core/ai/calendar-edits'
 import type { AiMessage } from '@core/ai/types'
 import { PROFESSIONAL } from '@core/persona'
 import { coachContext, coachVoiceNow, streamAi, type StreamHandle } from '../../ai/client'
-import { trimChat, type ChatMessage } from '../../ai/chat-history'
+import { editsNote, trimChat, type ChatEditState, type ChatMessage } from '../../ai/chat-history'
 import { handoffMessage, takeHandoff, type ChatHandoff } from '../../ai/handoff'
 import { PersonaAvatar } from '../../coach/PersonaAvatar'
 import { db } from '../../db/db'
 import { useCoachPack } from '../../coach/custom'
+import { applyCoachEdit, resolveNow, undoCoachEdit } from '../../plan/coach-edits'
 import { useSettings } from '../../stores/settings'
 import { Button } from '../../ui/Button'
 import { Markdown } from '../../ui/Markdown'
 import { PageHeader } from '../../ui/PageHeader'
+import { CoachEditCard } from './CoachEditCard'
 
 const KV_KEY = 'coach.chat'
 const SUGGESTIONS = [
@@ -22,6 +26,10 @@ const SUGGESTIONS = [
   'Why did my HR drift so much last ride?',
 ]
 const DATA_PREFIX = 'My training data (JSON):\n'
+/** What one chat message may hold (ai.stream.start in the IPC contract), less room for the wrapping. */
+const MESSAGE_ROOM = 58_000
+/** The least calendar and training data a message carries, however long the coach's instructions. */
+const MIN_CONTEXT = 15_000
 const SPICE = ['gentle', 'cheeky', 'snarky', 'savage', 'feral']
 
 /** What the rider sees for their own message. Older chats stored the training data with it. */
@@ -38,17 +46,19 @@ function withoutData(content: string): string {
 }
 
 /**
- * The messages as sent. The latest rider message leads with the coach's
- * current voice settings and `data`, everything CrankHog knows about the
+ * The messages as sent. The latest rider message leads with `voice`, the
+ * coach's current settings, and `data`, everything CrankHog knows about the
  * rider as of now; earlier messages go as written, so the coach always reads
- * one up-to-date copy.
+ * one up-to-date copy. A coach reply says what the rider did with its
+ * calendar changes.
  */
-function forAi(history: readonly ChatMessage[], data: string): AiMessage[] {
+function forAi(history: readonly ChatMessage[], data: string, voice: string): AiMessage[] {
   const last = history.length - 1
   return history.map((m, i) => {
     const content = withoutData(m.content)
-    if (i !== last || m.role !== 'user') return { role: m.role, content }
-    return { role: m.role, content: `${coachVoiceNow()}\n\n${DATA_PREFIX}${data}\n\n${m.shared ? content : `Question: ${content}`}` }
+    if (m.role === 'assistant') return { role: m.role, content: `${content}${editsNote(m)}` }
+    if (i !== last) return { role: m.role, content }
+    return { role: m.role, content: `${voice}\n\n${DATA_PREFIX}${data}\n\n${m.shared ? content : `Question: ${content}`}` }
   })
 }
 
@@ -65,6 +75,13 @@ export function CoachChatPage() {
   const input = useRef<HTMLInputElement>(null)
   const coach = useSettings((s) => s.coach)
   const persona = useCoachPack(coach.personaId).meta
+  // bumped when a change is applied or undone, so every card checks the calendar again
+  const [calendarVersion, setCalendarVersion] = useState(0)
+  // the chat as last rendered, for saving what the rider does with a change without waiting on a render
+  const latest = useRef(messages)
+  useEffect(() => {
+    latest.current = messages
+  }, [messages])
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' })
@@ -87,15 +104,17 @@ export function CoachChatPage() {
     setMessages([...history, { role: 'assistant', content: '' }])
     // read for every message, so a ride, a plan or a calendar change since the last one is in it
     let data: string
+    const voice = coachVoiceNow()
     try {
-      data = await coachContext()
+      // a long master prompt trims the calendar's detail rather than overfilling the message
+      data = await coachContext(Date.now(), Math.max(MIN_CONTEXT, Math.min(CONTEXT_BUDGET, MESSAGE_ROOM - voice.length - turn.content.length)))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setMessages([...prior])
       return
     }
     let acc = ''
-    const h = streamAi('chat', forAi(history, data), (d) => {
+    const h = streamAi('chat', forAi(history, data, voice), (d) => {
       acc += d
       setMessages([...history, { role: 'assistant', content: acc }])
     })
@@ -139,6 +158,28 @@ export function CoachChatPage() {
     if (!text.trim() || busy.current) return
     setDraft('')
     void ask(messages, { role: 'user', content: text.trim() })
+  }
+
+  /** Records what the rider did with change `index` of message `at`, and keeps it with the chat. */
+  const setEdit = async (at: number, index: number, state: ChatEditState) => {
+    const next = latest.current.map((m, i) => (i === at ? { ...m, edits: { ...m.edits, [index]: state } } : m))
+    latest.current = next
+    setMessages(next)
+    await db().kv.put({ key: KV_KEY, value: next })
+  }
+
+  const apply = async (at: number, index: number, resolved: EditResolve & { ok: true }) => {
+    const undo = await applyCoachEdit(resolved)
+    await setEdit(at, index, { status: 'applied', undo })
+    setCalendarVersion((v) => v + 1)
+  }
+
+  const undo = async (at: number, index: number) => {
+    const state = latest.current[at]?.edits?.[index]
+    if (!state?.undo) return
+    await undoCoachEdit(state.undo)
+    await setEdit(at, index, { status: 'undone' })
+    setCalendarVersion((v) => v + 1)
   }
 
   const clear = async () => {
@@ -194,7 +235,21 @@ export function CoachChatPage() {
           ) : (
             <div key={i} className="flex max-w-[90%] items-start gap-2.5">
               <PersonaAvatar persona={persona} className="mt-1" />
-              <div className="min-w-0 rounded-2xl border border-line bg-panel px-4 py-3">{m.content ? <Markdown text={m.content} /> : <span className="text-sm text-ink-faint">…</span>}</div>
+              <div className="min-w-0 rounded-2xl border border-line bg-panel px-4 py-3">
+                {m.content ? (
+                  <CoachReply
+                    message={m}
+                    writing={running !== null && i === messages.length - 1}
+                    locked={running !== null}
+                    calendarVersion={calendarVersion}
+                    onApply={(index, r) => apply(i, index, r)}
+                    onDismiss={(index) => void setEdit(i, index, { status: 'dismissed' })}
+                    onUndo={(index) => undo(i, index)}
+                  />
+                ) : (
+                  <span className="text-sm text-ink-faint">…</span>
+                )}
+              </div>
             </div>
           ),
         )}
@@ -236,6 +291,76 @@ export function CoachChatPage() {
         )}
       </form>
     </div>
+  )
+}
+
+/** A coach reply: its text, and a card for each calendar change in it. */
+function CoachReply({
+  message,
+  writing,
+  locked,
+  calendarVersion,
+  onApply,
+  onDismiss,
+  onUndo,
+}: {
+  message: ChatMessage
+  writing: boolean
+  /** A reply is on its way: the cards wait, so what the rider does isn't lost when it lands. */
+  locked: boolean
+  calendarVersion: number
+  onApply: (index: number, resolved: EditResolve & { ok: true }) => Promise<void>
+  onDismiss: (index: number) => void
+  onUndo: (index: number) => Promise<void>
+}) {
+  // the same parts while the text is the same, so a card doesn't check the calendar on every render
+  const parts = useMemo(() => splitCoachReply(message.content), [message.content])
+  const [applyingAll, setApplyingAll] = useState<string | null>(null)
+  const waiting = parts.filter((p) => p.kind === 'edit' && p.parse.ok && !message.edits?.[p.index])
+  const applyAll = async () => {
+    setApplyingAll('')
+    const skipped: string[] = []
+    for (const p of waiting) {
+      if (p.kind !== 'edit' || !p.parse.ok) continue
+      const r = await resolveNow(p.parse.edit)
+      try {
+        if (!r.ok) throw new Error(r.problem)
+        await onApply(p.index, r)
+      } catch (e) {
+        skipped.push(`Change ${p.index + 1}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    setApplyingAll(skipped.length > 0 ? skipped.join(' ') : null)
+  }
+  return (
+    <>
+      {parts.map((p, k) =>
+        p.kind === 'text' ? (
+          <Markdown key={k} text={p.text} />
+        ) : p.kind === 'pending' ? (
+          <p key={k} className="my-2 text-sm text-ink-faint">
+            {writing ? 'Writing a change…' : 'This change was cut off before it was finished.'}
+          </p>
+        ) : (
+          <CoachEditCard
+            key={k}
+            parse={p.parse}
+            state={message.edits?.[p.index]}
+            locked={locked}
+            calendarVersion={calendarVersion}
+            onApply={(r) => onApply(p.index, r)}
+            onDismiss={() => onDismiss(p.index)}
+            onUndo={() => onUndo(p.index)}
+          />
+        ),
+      )}
+      {!writing && waiting.length > 1 && (
+        <Button size="sm" variant="secondary" disabled={applyingAll === '' || locked} onClick={() => void applyAll()}>
+          Apply all {waiting.length} changes
+        </Button>
+      )}
+      {applyingAll && <p className="mt-2 text-sm text-bad">{applyingAll}</p>}
+    </>
   )
 }
 
